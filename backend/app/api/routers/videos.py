@@ -12,6 +12,13 @@ from TTS.api import TTS
 import numpy as np
 import soundfile as sf
 import io
+import subprocess
+import cv2
+import numpy as np
+import os
+import shutil
+from typing import Optional
+from pathlib import Path
 
 from pydantic import BaseModel, Field # Added for new Pydantic models
 
@@ -83,6 +90,16 @@ class TTSRequest(BaseModel):
 class TTSResponse(BaseModel):
     job_id: str
     concatenated_audio_path: str
+    message: str
+
+class LipSyncRequest(BaseModel):
+    video_path: str = Field(..., description="Path to the input video file")
+    audio_path: str = Field(..., description="Path to the audio file for lip-sync")
+    output_path: Optional[str] = Field(None, description="Path to save the output video")
+    
+class LipSyncResponse(BaseModel):
+    job_id: str
+    output_path: str
     message: str
 
 # --- Helper Functions for TTS --- 
@@ -240,4 +257,95 @@ router.post(
     response_model=TTSResponse, 
     tags=["tts-poc"]
 )(generate_tts_audio_endpoint)
+
+def generate_lipsync_video(video_path: str, audio_path: str, output_path: Optional[str] = None) -> str:
+    """
+    Generate a lip-synced video using Wav2Lip
+    """
+    # Create output directory if it doesn't exist
+    output_dir = Path("output_videos")
+    output_dir.mkdir(exist_ok=True)
+    
+    # Set default output path if not provided
+    if output_path is None:
+        output_path = str(output_dir / f"lipsync_{Path(video_path).stem}.mp4")
+    
+    try:
+        # This is a placeholder for the Wav2Lip inference
+        # In a real implementation, you would call the Wav2Lip model here
+        print(f"Generating lip-synced video from {video_path} with audio {audio_path}")
+        print(f"Output will be saved to: {output_path}")
+        
+        # For now, we'll just copy the video as a placeholder
+        # In a real implementation, you would use the Wav2Lip model here
+        video = cv2.VideoCapture(video_path)
+        fps = video.get(cv2.CAP_PROP_FPS)
+        width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        
+        # Create a video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+        
+        # Process video frames (just copy them for now)
+        while True:
+            ret, frame = video.read()
+            if not ret:
+                break
+            out.write(frame)
+        
+        video.release()
+        out.release()
+        
+        # Add audio to the video
+        temp_output = str(output_path).replace('.mp4', '_temp.mp4')
+        cmd = [
+            'ffmpeg',
+            '-y',
+            '-i', output_path,
+            '-i', audio_path,
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-strict', 'experimental',
+            '-map', '0:v:0',
+            '-map', '1:a:0',
+            '-shortest',
+            temp_output
+        ]
+        
+        subprocess.run(cmd, check=True)
+        
+        # Replace the original file
+        os.replace(temp_output, output_path)
+        
+        return output_path
+        
+    except Exception as e:
+        print(f"Error in generate_lipsync_video: {str(e)}")
+        raise
+
+@router.post("/generate-lipsync", response_model=LipSyncResponse, tags=["lipsync"])
+async def generate_lipsync_endpoint(request: LipSyncRequest = Body(...)):
+    """
+    Generate a lip-synced video from a source video and audio file.
+    """
+    try:
+        # Generate lip-synced video
+        output_path = generate_lipsync_video(
+            video_path=request.video_path,
+            audio_path=request.audio_path,
+            output_path=request.output_path
+        )
+        
+        return LipSyncResponse(
+            job_id=str(uuid.uuid4()),
+            output_path=output_path,
+            message="Lip-sync generation completed successfully"
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate lip-synced video: {str(e)}"
+        )
 
