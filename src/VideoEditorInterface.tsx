@@ -23,11 +23,24 @@ export default function VideoEditorInterface() {
     const loadProject = () => {
       setIsLoading(true);
       setError(null);
-      // Use videoIdFromUrl if available, otherwise a default project ID (e.g., from the first dummy template)
-      const projectIdToLoad = videoIdFromUrl || dummyTemplates[0]?.id || 'template_1'; 
+
+      let effectiveId = videoIdFromUrl;
+      if (videoIdFromUrl === 'vid1') {
+        effectiveId = 'template_1'; // Treat 'vid1' as 'template_1'
+      }
+
+      // Use effectiveId if available, otherwise a default project ID
+      const projectIdToLoad = effectiveId || dummyTemplates[0]?.id || 'template_1';
       
-      // In a real app, this would be an API call: fetchVideoProject(projectIdToLoad)
-      const loadedProject = getDummyProject(projectIdToLoad.replace('template_', 'project_')); // Adjust if your project IDs differ from template IDs
+      // Convert template ID to project key (e.g., 'template_1' to 'project_1')
+      const projectKey = projectIdToLoad.startsWith('template_') 
+        ? projectIdToLoad.replace('template_', 'project_') 
+        : projectIdToLoad; // If it's not a template_X ID, use as is (though this case might lead to errors if not in dummyProjects)
+      
+      const loadedProject = getDummyProject(projectKey);
+
+      // Log for debugging
+      console.log(`Attempting to load project: videoIdFromUrl='${videoIdFromUrl}', effectiveId='${effectiveId}', projectIdToLoad='${projectIdToLoad}', projectKey='${projectKey}'`);
       
       if (loadedProject) {
         setProject(loadedProject);
@@ -200,12 +213,12 @@ export default function VideoEditorInterface() {
             <p className="text-slate-400 text-sm">Click any segment to edit its content</p>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-0">
+          <div className="flex">
             {project?.segments.map((segment: VideoSegment) => (
               <button
                 key={segment.id}
                 onClick={() => handleSegmentClick(segment.id)}
-                className={`group relative p-6 border-r border-slate-700/50 last:border-r-0 transition-all duration-300 hover:bg-slate-700/30 ${selectedSegmentId === segment.id 
+                className={`flex-1 group relative p-6 border-r border-slate-700/50 last:border-r-0 transition-all duration-300 hover:bg-slate-700/30 ${selectedSegmentId === segment.id 
                     ? 'bg-slate-700/50' 
                     : ''
                 }`}

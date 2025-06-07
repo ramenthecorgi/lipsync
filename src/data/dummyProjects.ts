@@ -1,4 +1,4 @@
-import { VideoProject, VideoTemplate, VideoSegment, Speaker } from '../types/video';
+import { VideoProject, VideoSegment, Speaker } from '../types/video';
 import { getTemplateById } from './dummyTemplates';
 
 // Common speakers that can be used across different projects
@@ -35,62 +35,56 @@ export const dummySpeakers: Speaker[] = [
 
 // Helper function to create segments for a project
 const createSegments = (templateId: string, speakers: Speaker[]): VideoSegment[] => {
-  const baseSegments = [
+  if (!speakers || speakers.length === 0) {
+    console.error('Error in createSegments: No speakers provided. Returning empty segments.');
+    // Fallback: either return empty or use a default speaker if available globally
+    // For now, returning empty to highlight the issue if it occurs.
+    return []; 
+  }
+
+  const baseSegmentsData = [
     {
-      id: `${templateId}_seg1`,
-      videoId: templateId,
       order: 1,
       startTime: 0.0,
       endTime: 5.2,
       originalText: 'Welcome to our video presentation. Today, we have something special for you.',
-      speakerId: speakers[0].id,
-      status: 'processed' as const,
-      style: {
-        gradient: 'from-purple-500 to-pink-500'
-      }
+      style: { gradient: 'from-purple-500 to-pink-500' }
     },
     {
-      id: `${templateId}_seg2`,
-      videoId: templateId,
       order: 2,
       startTime: 5.2,
       endTime: 12.5,
       originalText: 'In this segment, we will explore the main features and benefits of our product.',
-      speakerId: speakers[1].id,
-      status: 'processed' as const,
-      style: {
-        gradient: 'from-blue-500 to-cyan-500'
-      }
+      style: { gradient: 'from-blue-500 to-cyan-500' }
     },
     {
-      id: `${templateId}_seg3`,
-      videoId: templateId,
       order: 3,
       startTime: 12.5,
       endTime: 22.0,
       originalText: 'Let me show you how easy it is to get started with just a few simple steps.',
-      speakerId: speakers[2].id,
-      status: 'processed' as const,
-      style: {
-        gradient: 'from-green-500 to-teal-500'
-      }
+      style: { gradient: 'from-green-500 to-teal-500' }
     },
     {
-      id: `${templateId}_seg4`,
-      videoId: templateId,
       order: 4,
       startTime: 22.0,
       endTime: 30.0,
       originalText: 'Thank you for watching. We hope you found this presentation helpful and informative.',
-      speakerId: speakers[3].id,
-      status: 'processed' as const,
-      style: {
-        gradient: 'from-amber-500 to-orange-500'
-      }
+      style: { gradient: 'from-amber-500 to-orange-500' }
     }
   ];
 
-  return baseSegments;
+  return baseSegmentsData.map((segmentData, index) => ({
+    id: `${templateId}_seg${segmentData.order}`,
+    videoId: templateId,
+    order: segmentData.order,
+    startTime: segmentData.startTime,
+    endTime: segmentData.endTime,
+    originalText: segmentData.originalText,
+    // Use modulo to cycle through speakers if there are fewer speakers than segments
+    speakerId: speakers[index % speakers.length].id,
+    status: 'processed' as const,
+    style: segmentData.style
+  }));
 };
 
 // Create a project from a template ID
