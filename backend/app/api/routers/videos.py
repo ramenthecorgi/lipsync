@@ -1,11 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
 import shutil
+import subprocess # Added for running FFmpeg
 from pathlib import Path
 from datetime import datetime
 import uuid
+import torch
+from TTS.api import TTS
+import numpy as np
+import soundfile as sf
+import io
+
+from pydantic import BaseModel, Field # Added for new Pydantic models
 
 from ... import schemas, models
 from ...database import get_db
@@ -14,287 +22,219 @@ from ...config import settings
 
 router = APIRouter()
 
-def save_upload_file(upload_file: UploadFile, destination: Path) -> str:
-    """Save uploaded file to the destination directory."""
+# --- TTS and Lip Sync POC Endpoints --- #
+
+# --- Configuration for TTS --- 
+# Assuming this file (videos.py) is at backend/app/api/routers/videos.py
+# So BASE_DIR should be backend/
+_CURRENT_FILE_DIR = Path(__file__).resolve().parent
+BASE_DIR = _CURRENT_FILE_DIR.parent.parent.parent  # Should resolve to backend/
+
+# Directory configuration
+TEMP_AUDIO_DIR = BASE_DIR / "temp" / "audio"
+OUTPUT_AUDIO_DIR = BASE_DIR / "output_audio"
+
+# Ensure directories exist
+TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+
+# --- Initialize Coqui TTS ---
+try:
+    # Check if CUDA is available
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"Using device: {device}")
+    
+    # Initialize TTS with a fast model by default
+    tts = TTS(model_name="tts_models/en/ljspeech/glow-tts", progress_bar=False, gpu=torch.cuda.is_available())
+    print("Coqui TTS initialized successfully")
+except Exception as e:
+    tts = None
+    print(f"Could not initialize Coqui TTS: {e}")
+
+# --- Pydantic Models for TTS --- 
+class TTSRequest(BaseModel):
+    template_video_path: str = Field(
+        ..., 
+        description="Path to the template video (used for context, not processed in this phase).",
+        example="/path/to/some/dummy_video.mp4"
+    )
+    transcript_segments: List[str] = Field(
+        ..., 
+        description="List of text segments to convert to speech.",
+        example=["Hello world, this is the first sentence.", "This is the second sentence."]
+    )
+    job_id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()), 
+        description="Unique ID for this job."
+    )
+    voice: str = Field(
+        default="default",
+        description="Voice to use for TTS. Default is the model's default voice."
+    )
+    language: str = Field(
+        default="en",
+        description="Language code for TTS. Default is 'en' for English."
+    )
+    speed: float = Field(
+        default=1.0,
+        description="Speed of speech. 1.0 is normal speed."
+    )
+
+class TTSResponse(BaseModel):
+    job_id: str
+    concatenated_audio_path: str
+    message: str
+
+# --- Helper Functions for TTS --- 
+def concatenate_audio_ffmpeg(segment_paths: List[str], output_path: str) -> bool:
+    """
+    Concatenates multiple WAV audio files into a single WAV file using FFmpeg.
+    Assumes all input segments are WAV files.
+    """
+    if not segment_paths:
+        print("No audio segments provided for concatenation.")
+        return False
+
+    list_file_path = TEMP_AUDIO_DIR / f"concat_list_{uuid.uuid4().hex}.txt"
+    
     try:
-        # Create a unique filename to avoid collisions
-        file_extension = Path(upload_file.filename).suffix
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = destination / unique_filename
+        with open(list_file_path, 'w') as f:
+            for path_str in segment_paths:
+                abs_path = Path(path_str).resolve()
+                f.write(f"file '{abs_path}'\n")
+
+        command = [
+            "ffmpeg",
+            "-y", # Overwrite output file if it exists
+            "-f", "concat",
+            "-safe", "0", # Allow absolute paths in the list file
+            "-i", str(list_file_path),
+            "-c", "copy", # Copy audio codec as segments are already WAV
+            str(output_path)
+        ]
+
+        print(f"Running FFmpeg command: {' '.join(command)}")
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate(timeout=60) # 60 seconds timeout
+
+        if process.returncode != 0:
+            print(f"FFmpeg Error (concat audio): {stderr.decode()}")
+            return False
         
-        # Ensure the directory exists
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Save the file
-        with file_path.open("wb") as buffer:
-            shutil.copyfileobj(upload_file.file, buffer)
-            
-        return str(file_path.relative_to(settings.UPLOAD_DIR))
+        print(f"Successfully concatenated audio to {output_path}")
+        return True
+    except subprocess.TimeoutExpired:
+        print("FFmpeg audio concatenation timed out.")
+        if 'process' in locals() and process.poll() is None:
+            process.kill()
+        return False
+    except Exception as e:
+        print(f"Error running FFmpeg for audio concatenation: {e}")
+        return False
     finally:
-        upload_file.file.close()
+        if list_file_path.exists():
+            try:
+                list_file_path.unlink() # Clean up the list file
+            except Exception as e_unlink:
+                print(f"Error deleting concat list file {list_file_path}: {e_unlink}")
 
-@router.post("/upload/", response_model=schemas.Video)
-async def upload_video(
-    project_id: int = Form(...),
-    title: str = Form(...),
-    description: Optional[str] = Form(None),
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-):
-    """Upload a new video file."""
-    # Check if project exists and user has access
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
-    
-    # Validate file type
-    allowed_extensions = {".mp4", ".mov", ".avi", ".mkv"}
-    file_extension = Path(file.filename).suffix.lower()
-    if file_extension not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
-        )
-    
-    # Save the file
-    upload_dir = Path(settings.UPLOAD_DIR)
-    file_path = save_upload_file(file, upload_dir)
-    
-    # Create video record in database
-    db_video = models.Video(
-        title=title,
-        description=description,
-        file_path=str(file_path),
-        project_id=project_id,
-        status="uploaded",
-    )
-    
-    db.add(db_video)
-    db.commit()
-    db.refresh(db_video)
-    
-    # In a real application, you would start background tasks for video processing here
-    # e.g., generate_thumbnails.delay(db_video.id)
-    # e.g., extract_audio.delay(db_video.id)
-    # e.g., transcribe_video.delay(db_video.id)
-    
-    return db_video
-
-@router.get("/{video_id}", response_model=schemas.Video)
-def get_video(
-    video_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-):
-    """Get video by ID."""
-    video = db.query(models.Video).join(models.Project).filter(
-        models.Video.id == video_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found or access denied")
-        
-    return video
-
-@router.get("/project/{project_id}", response_model=List[schemas.Video])
-def get_videos_by_project(
-    project_id: int,
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-):
-    """Get all videos for a specific project."""
-    # Verify project exists and user has access
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found or access denied")
-    
-    videos = db.query(models.Video).filter(
-        models.Video.project_id == project_id
-    ).offset(skip).limit(limit).all()
-    
-    return videos
-
-@router.put("/{video_id}", response_model=schemas.Video)
-def update_video(
-    video_id: int,
-    video_update: schemas.VideoUpdate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-):
-    """Update video metadata."""
-    video = db.query(models.Video).join(models.Project).filter(
-        models.Video.id == video_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found or access denied")
-    
-    # Update video fields
-    update_data = video_update.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(video, field, value)
-    
-    video.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(video)
-    
-    return video
-
-@router.delete("/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_video(
-    video_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-):
-    """Delete a video."""
-    video = db.query(models.Video).join(models.Project).filter(
-        models.Video.id == video_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found or access denied")
-    
-    # Delete the file if it exists
-    if video.file_path:
+# --- API Endpoint for TTS Generation --- 
+@router.post("/generate-tts-audio", response_model=TTSResponse, tags=["tts-poc"])
+async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
+    """
+    Generates audio from text segments using Coqui TTS and concatenates them.
+    This endpoint supports multiple languages and voices.
+    """
+    global tts
+    if tts is None:
         try:
-            file_path = Path(settings.UPLOAD_DIR) / video.file_path
-            if file_path.exists():
-                file_path.unlink()
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False, gpu=torch.cuda.is_available())
         except Exception as e:
-            # Log the error but don't fail the request
-            print(f"Error deleting file {video.file_path}: {e}")
-    
-    # Delete the video record
-    db.delete(video)
-    db.commit()
-    
-    return None
+            raise HTTPException(status_code=503, detail=f"Coqui TTS initialization failed: {str(e)}")
 
-# Video Segments Endpoints
-@router.post("/{video_id}/segments/", response_model=schemas.VideoSegment)
-def create_video_segment(
-    video_id: int,
-    segment: schemas.VideoSegmentCreate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-):
-    """Create a new segment for a video."""
-    # Verify video exists and user has access
-    video = db.query(models.Video).join(models.Project).filter(
-        models.Video.id == video_id,
-        models.Project.owner_id == current_user.id
-    ).first()
+    job_temp_segments_dir = TEMP_AUDIO_DIR / request.job_id
+    try:
+        job_temp_segments_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e_mkdir:
+        raise HTTPException(status_code=500, detail=f"Could not create temporary directory for audio segments: {e_mkdir}")
     
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found or access denied")
-    
-    # Create the segment
-    db_segment = models.VideoSegment(
-        **segment.dict(),
-        video_id=video_id
+    segment_audio_paths = []
+    all_segments_processed_successfully = True
+
+    for i, segment_text in enumerate(request.transcript_segments):
+        if not segment_text.strip():
+            print(f"Job {request.job_id}: Skipping empty transcript segment {i+1}")
+            continue
+            
+        segment_output_path = job_temp_segments_dir / f"segment_{i+1}.wav"
+        
+        try:
+            print(f"Job {request.job_id}: Generating TTS for segment {i+1}...")
+            
+            # Generate audio using Coqui TTS
+            audio = tts.tts(
+                text=segment_text,
+                speaker=request.voice,
+                language=request.language,
+                speed=request.speed
+            )
+            
+            # Convert to numpy array and normalize to 16-bit PCM
+            audio_np = np.array(audio)
+            audio_np = (audio_np * 32767).astype(np.int16)
+            
+            # Save as WAV file
+            with io.BytesIO() as wav_buffer:
+                sf.write(wav_buffer, audio_np, 22050, format='WAV')
+                wav_bytes = wav_buffer.getvalue()
+            
+            # Save to file
+            with open(segment_output_path, "wb") as wf:
+                wf.write(wav_bytes)
+            
+            segment_audio_paths.append(str(segment_output_path))
+            print(f"Job {request.job_id}: TTS for segment {i+1} saved to {segment_output_path}")
+
+        except Exception as e_tts:
+            print(f"Job {request.job_id}: Error generating TTS for segment {i+1} ('{segment_text[:30]}...'): {e_tts}")
+            all_segments_processed_successfully = False
+
+    if not segment_audio_paths:
+        if job_temp_segments_dir.exists():
+            shutil.rmtree(job_temp_segments_dir, ignore_errors=True)
+        detail_msg = "No audio segments were generated. Transcript might be empty or TTS failed for all segments."
+        if not all_segments_processed_successfully:
+            detail_msg += " Some segments encountered errors during TTS generation."
+        raise HTTPException(status_code=400, detail=detail_msg)
+
+    concatenated_audio_filename = f"{request.job_id}_concatenated_tts.wav"
+    concatenated_output_path = OUTPUT_AUDIO_DIR / concatenated_audio_filename
+
+    print(f"Job {request.job_id}: Concatenating {len(segment_audio_paths)} audio segments to {concatenated_output_path}...")
+    if not concatenate_audio_ffmpeg(segment_audio_paths, str(concatenated_output_path)):
+        if job_temp_segments_dir.exists():
+            shutil.rmtree(job_temp_segments_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"Job {request.job_id}: Failed to concatenate audio segments. Check server logs for FFmpeg errors.")
+
+    # Optional: Clean up individual segment files after successful concatenation
+    # For debugging, you might want to keep them initially.
+    if job_temp_segments_dir.exists():
+        shutil.rmtree(job_temp_segments_dir, ignore_errors=True)
+        print(f"Job {request.job_id}: Cleaned up temporary segment directory {job_temp_segments_dir}")
+
+    final_message = "TTS audio generated and concatenated successfully."
+    if not all_segments_processed_successfully:
+        final_message += " However, some transcript segments may have failed during TTS generation (check logs)."
+
+    return TTSResponse(
+        job_id=request.job_id,
+        concatenated_audio_path=str(concatenated_output_path),
+        message=final_message
     )
-    
-    db.add(db_segment)
-    db.commit()
-    db.refresh(db_segment)
-    
-    return db_segment
 
-@router.get("/{video_id}/segments/", response_model=List[schemas.VideoSegment])
-def get_video_segments(
-    video_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-):
-    """Get all segments for a video."""
-    # Verify video exists and user has access
-    video = db.query(models.Video).join(models.Project).filter(
-        models.Video.id == video_id,
-        models.Project.owner_id == current_user.id
-    ).first()
-    
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found or access denied")
-    
-    # Get all segments for the video
-    segments = db.query(models.VideoSegment).filter(
-        models.VideoSegment.video_id == video_id
-    ).order_by(models.VideoSegment.start_time).all()
-    
-    return segments
+# Note: Ensure this router (videos.router) is correctly included in your main API router
+# in backend/app/api/api_v1/api.py. For example:
+# from app.api.routers import videos 
+# api_router.include_router(videos.router, prefix="/videos", tags=["videos", "tts-poc"]) 
 
-@router.put("/segments/{segment_id}", response_model=schemas.VideoSegment)
-def update_video_segment(
-    segment_id: int,
-    segment_update: schemas.VideoSegmentUpdate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-):
-    """Update a video segment."""
-    # Get the segment with video and project info
-    segment = (
-        db.query(models.VideoSegment)
-        .join(models.Video)
-        .join(models.Project)
-        .filter(
-            models.VideoSegment.id == segment_id,
-            models.Project.owner_id == current_user.id
-        )
-        .first()
-    )
-    
-    if not segment:
-        raise HTTPException(status_code=404, detail="Segment not found or access denied")
-    
-    # Update segment fields
-    update_data = segment_update.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(segment, field, value)
-    
-    segment.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(segment)
-    
-    return segment
-
-@router.delete("/segments/{segment_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_video_segment(
-    segment_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-):
-    """Delete a video segment."""
-    # Get the segment with video and project info
-    segment = (
-        db.query(models.VideoSegment)
-        .join(models.Video)
-        .join(models.Project)
-        .filter(
-            models.VideoSegment.id == segment_id,
-            models.Project.owner_id == current_user.id
-        )
-        .first()
-    )
-    
-    if not segment:
-        raise HTTPException(status_code=404, detail="Segment not found or access denied")
-    
-    # Delete the segment
-    db.delete(segment)
-    db.commit()
-    
-    return None

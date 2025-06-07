@@ -10,3 +10,6 @@ pydantic-settings==2.1.0
 python-multipart==0.0.6
 httpx==0.25.1
 python-magic==0.4.27
+TTS==0.22.0
+torch>=2.0.0
+torchaudio>=2.0.0
