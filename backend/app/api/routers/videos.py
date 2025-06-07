@@ -236,6 +236,21 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
             segment_dict['duration'] = 0.5
         segments[i] = SegmentModel(**segment_dict)
     
+    # Helper for context-aware pause adjustment
+    def get_natural_pause(prev_text, base_duration):
+        import numpy as np
+        if not prev_text:
+            return base_duration
+        prev_text = prev_text.strip()
+        # Sentence-ending punctuation
+        if prev_text.endswith(('.', '!', '?')):
+            return max(base_duration, 0.7 + np.random.uniform(-0.1, 0.3))
+        # Phrase-ending punctuation
+        elif prev_text.endswith((',', ';', ':')):
+            return max(base_duration, 0.3 + np.random.uniform(-0.05, 0.1))
+        # Otherwise, keep short
+        return max(base_duration, 0.15 + np.random.uniform(-0.03, 0.05))
+
     # Generate audio for each segment (both silent and spoken)
     for i, segment in enumerate(segments):
         segment_duration = segment.end_time - segment.start_time
@@ -247,9 +262,11 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
             print(f"Timing: {segment.start_time:.2f}s - {segment.end_time:.2f}s ({segment_duration:.2f}s)")
             
             if segment.is_silence or not segment.text.strip():
-                # Generate silent segment
-                print(f"Generating {segment_duration:.2f}s of silence")
-                silence_samples = int(segment_duration * 22050)
+                # Context-aware adjustment for silence duration
+                prev_text = segments[i-1].text if i > 0 else ''
+                natural_pause = get_natural_pause(prev_text, segment_duration)
+                print(f"Generating {natural_pause:.2f}s of context-aware silence (original: {segment_duration:.2f}s)")
+                silence_samples = int(natural_pause * 22050)
                 audio_np = np.zeros(silence_samples, dtype=np.int16)
             else:
                 # Generate TTS for spoken segment
