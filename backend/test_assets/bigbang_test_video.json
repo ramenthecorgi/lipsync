@@ -1,39 +1,143 @@
 {
   "title": "bigbang_test_video",
-  "description": "Auto-generated from bigbang_test_video.mp4",
+  "description": "Auto-generated from bigbang_test_video.mp4 with smart segment processing",
   "is_public": false,
+  "metadata": {
+    "video_duration": 0,
+    "total_segments": 19,
+    "total_segments_duration": 18.54,
+    "processing_timestamp": "2025-06-07T15:04:49.799732",
+    "processing_notes": "Processed with SmartSegmentProcessor",
+    "segment_stats": {
+      "min_duration": 0.33999999999999986,
+      "max_duration": 3.0999999999999996,
+      "avg_duration": 0.9757894736842104,
+      "silent_segments": 8,
+      "spoken_segments": 11
+    }
+  },
   "videos": [
     {
       "title": "bigbang_test_video",
       "file_path": "test_assets/bigbang_test_video.mp4",
-      "duration": 18.84,
+      "duration": 0,
       "segments": [
         {
+          "start_time": 0.0,
+          "end_time": 2.22,
+          "text": "",
+          "is_silence": true
+        },
+        {
           "start_time": 2.22,
-          "end_time": 6.12,
-          "text": "Quick poll. PS4 or Xbox One. Raj."
+          "end_time": 3.28,
+          "text": "Quick poll.",
+          "is_silence": false
+        },
+        {
+          "start_time": 3.28,
+          "end_time": 3.7,
+          "text": "",
+          "is_silence": true
+        },
+        {
+          "start_time": 3.7,
+          "end_time": 5.52,
+          "text": "PS4 or Xbox One.",
+          "is_silence": false
+        },
+        {
+          "start_time": 5.52,
+          "end_time": 5.96,
+          "text": "",
+          "is_silence": true
+        },
+        {
+          "start_time": 5.96,
+          "end_time": 6.56,
+          "text": "Raj.",
+          "is_silence": false
         },
         {
           "start_time": 6.56,
-          "end_time": 8.12,
-          "text": "Uh, Xbox One. Penny. Huh?"
+          "end_time": 7.62,
+          "text": "Uh, Xbox One. Penny.",
+          "is_silence": false
+        },
+        {
+          "start_time": 7.62,
+          "end_time": 8.0,
+          "text": "",
+          "is_silence": true
+        },
+        {
+          "start_time": 8.0,
+          "end_time": 9.620000000000001,
+          "text": "Huh?",
+          "is_silence": false
         },
         {
           "start_time": 9.620000000000001,
-          "end_time": 11.2,
-          "text": "Leonard. PS4."
+          "end_time": 10.3,
+          "text": "Leonard.",
+          "is_silence": false
         },
         {
-          "start_time": 11.44,
+          "start_time": 10.3,
+          "end_time": 10.74,
+          "text": "",
+          "is_silence": true
+        },
+        {
+          "start_time": 10.74,
+          "end_time": 11.8,
+          "text": "PS4. Wallowicz.",
+          "is_silence": false
+        },
+        {
+          "start_time": 11.8,
+          "end_time": 12.3,
+          "text": "",
+          "is_silence": true
+        },
+        {
+          "start_time": 12.3,
+          "end_time": 12.94,
+          "text": "Both great.",
+          "is_silence": false
+        },
+        {
+          "start_time": 12.94,
+          "end_time": 13.32,
+          "text": "",
+          "is_silence": true
+        },
+        {
+          "start_time": 13.32,
           "end_time": 13.66,
-          "text": "Wallowicz. Both great. Bernadette."
+          "text": "Bernadette.",
+          "is_silence": false
         },
         {
           "start_time": 13.96,
+          "end_time": 14.66,
+          "text": "I like the weed.",
+          "is_silence": false
+        },
+        {
+          "start_time": 14.66,
+          "end_time": 15.74,
+          "text": "",
+          "is_silence": true
+        },
+        {
+          "start_time": 15.74,
           "end_time": 18.84,
-          "text": "I like the weed. Thanks, grandma."
+          "text": "I like the weed. Thanks, grandma.",
+          "is_silence": false
         }
-      ]
+      ],
+      "segment_count": 19
     }
   ]
 }

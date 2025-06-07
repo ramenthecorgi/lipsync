@@ -3,6 +3,7 @@ import cv2
 import json
 import numpy as np
 import whisper
+import datetime
 from pathlib import Path
 from pydub import AudioSegment
 from typing import Tuple, Dict, List, Optional
@@ -209,7 +210,130 @@ class VideoProcessor:
             
         return combined_segments
 
-    def generate_transcript_json(self, video_path: str, max_segments: int = 5) -> Dict:
+    class SmartSegmentProcessor:
+        def __init__(
+            self,
+            max_segments: int = 20,
+            max_silence_duration: float = 0.5,
+            min_segment_duration: float = 0.3,
+        ):
+            self.max_segments = max_segments
+            self.max_silence_duration = max_silence_duration
+            self.min_segment_duration = min_segment_duration
+
+        def process_segments(self, segments: List[Dict], video_duration: float) -> List[Dict]:
+            if not segments:
+                return []
+
+            # First pass: Add all silent segments
+            processed = self._add_silent_segments(segments, video_duration)
+            
+            # Second pass: Merge short silences
+            processed = self._merge_short_silences(processed)
+            
+            # Third pass: Ensure minimum segment duration
+            return self._enforce_min_duration(processed)
+
+        def _add_silent_segments(self, segments: List[Dict], video_duration: float) -> List[Dict]:
+            """Add silent segments between and around spoken segments"""
+            processed = []
+            prev_end = 0.0
+
+            for segment in segments:
+                # Add leading silence if significant gap
+                if segment['start_time'] > prev_end + self.max_silence_duration:
+                    processed.append({
+                        'start_time': prev_end,
+                        'end_time': segment['start_time'],
+                        'text': '',
+                        'is_silence': True
+                    })
+                
+                # Add the spoken segment
+                processed.append(segment)
+                prev_end = segment['end_time']
+            
+            # Add trailing silence if needed
+            if prev_end < video_duration - self.max_silence_duration:
+                processed.append({
+                    'start_time': prev_end,
+                    'end_time': video_duration,
+                    'text': '',
+                    'is_silence': True
+                })
+                
+            return processed
+
+        def _merge_short_silences(self, segments: List[Dict]) -> List[Dict]:
+            """Merge short silences and consecutive non-silent segments"""
+            if len(segments) <= 1:
+                return segments
+
+            result = [segments[0]]
+            
+            for current in segments[1:]:
+                last = result[-1]
+                
+                # If current is a short silence, merge with adjacent segments
+                if (current['is_silence'] and 
+                    (current['end_time'] - current['start_time']) <= self.max_silence_duration):
+                    
+                    # Extend previous segment's end time
+                    if not last['is_silence']:
+                        last['end_time'] = current['end_time']
+                    # Or extend next non-silent segment's start time
+                    elif len(result) > 1:
+                        result[-2]['end_time'] = current['end_time']
+                        result.pop()
+                    else:
+                        result[-1] = current
+                
+                # Merge consecutive non-silent segments that are close together
+                elif (not current['is_silence'] and not last['is_silence'] and
+                      (current['start_time'] - last['end_time']) <= self.max_silence_duration):
+                    # Merge the current segment with the previous one
+                    last['end_time'] = current['end_time']
+                    last['text'] = ' '.join(filter(None, [last.get('text', ''), current.get('text', '')]))
+                
+                else:
+                    result.append(current)
+                    
+            return result
+
+        def _enforce_min_duration(self, segments: List[Dict]) -> List[Dict]:
+            """Ensure segments meet minimum duration by merging with neighbors"""
+            if len(segments) <= 1:
+                return segments
+
+            result = []
+            i = 0
+            n = len(segments)
+            
+            while i < n:
+                current = segments[i]
+                
+                # Skip if segment is long enough or we can't merge further
+                if ((current['end_time'] - current['start_time']) >= self.min_segment_duration or 
+                    i == 0 or i == n - 1):
+                    result.append(current)
+                    i += 1
+                    continue
+                    
+                # Try to merge with next segment
+                next_seg = segments[i + 1]
+                merged = {
+                    'start_time': current['start_time'],
+                    'end_time': next_seg['end_time'],
+                    'text': ' '.join(filter(None, [current.get('text', ''), next_seg.get('text', '')])),
+                    'is_silence': current['is_silence'] and next_seg['is_silence']
+                }
+                
+                result.append(merged)
+                i += 2  # Skip the next segment as it's been merged
+                
+            return result
+
+    def generate_transcript_json(self, video_path: str, max_segments: int = 20) -> Dict:
         """Generate a transcript JSON following the Project data model.
         
         Args:
@@ -224,32 +348,62 @@ class VideoProcessor:
         
         # Transcribe audio
         result = self.transcribe_audio(audio_path)
+        video_duration = result.get('duration', 0)
         
-        # Format segments according to Project model (without word-level breakdown)
+        # Create initial segments from Whisper results
         segments = [
             {
                 'start_time': segment['start'],
                 'end_time': segment['end'],
-                'text': segment['text'].strip()
+                'text': segment['text'].strip(),
+                'is_silence': False
             }
             for segment in result['segments']
         ]
         
-        # Combine segments to have approximately max_segments
-        combined_segments = self._combine_segments(segments, max_segments)
+        # Process segments with SmartSegmentProcessor
+        processor = self.SmartSegmentProcessor(
+            max_segments=max_segments,
+            max_silence_duration=0.3,  # 300ms
+            min_segment_duration=0.2    # 200ms
+        )
+        
+        processed_segments = processor.process_segments(segments, video_duration)
         
         # Create project data structure
         video_path = Path(video_path)
+        
+        # Calculate total duration of all segments
+        total_segments_duration = sum(
+            seg['end_time'] - seg['start_time'] 
+            for seg in processed_segments
+        )
+        
         project_data = {
             'title': video_path.stem,
-            'description': f'Auto-generated from {video_path.name}',
+            'description': f'Auto-generated from {video_path.name} with smart segment processing',
             'is_public': False,
+            'metadata': {
+                'video_duration': video_duration,
+                'total_segments': len(processed_segments),
+                'total_segments_duration': total_segments_duration,
+                'processing_timestamp': datetime.datetime.now().isoformat(),
+                'processing_notes': 'Processed with SmartSegmentProcessor',
+                'segment_stats': {
+                    'min_duration': min((s['end_time'] - s['start_time'] for s in processed_segments), default=0),
+                    'max_duration': max((s['end_time'] - s['start_time'] for s in processed_segments), default=0),
+                    'avg_duration': total_segments_duration / len(processed_segments) if processed_segments else 0,
+                    'silent_segments': sum(1 for s in processed_segments if s.get('is_silence', False)),
+                    'spoken_segments': sum(1 for s in processed_segments if not s.get('is_silence', True))
+                }
+            },
             'videos': [
                 {
                     'title': video_path.stem,
                     'file_path': str(video_path),
-                    'duration': result['segments'][-1]['end'] if result['segments'] else 0,
-                    'segments': combined_segments
+                    'duration': video_duration,
+                    'segments': processed_segments,
+                    'segment_count': len(processed_segments)
                 }
             ]
         }

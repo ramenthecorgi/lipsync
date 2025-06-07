@@ -63,6 +63,7 @@ class SegmentModel(BaseModel):
     start_time: float = Field(..., description="Start time of the segment in seconds")
     end_time: float = Field(..., description="End time of the segment in seconds")
     text: str = Field(..., description="Text content of the segment")
+    duration: Optional[float] = Field(None, description="Duration of the segment in seconds")
 
 class VideoModel(BaseModel):
     title: str = Field(..., description="Title of the video")
@@ -223,7 +224,19 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
     if not request.videos or not request.videos[0].segments:
         raise HTTPException(status_code=400, detail="No video segments found in the request")
 
-    for i, segment in enumerate(request.videos[0].segments):
+    # Use original segment timings to preserve natural pauses
+    segments = request.videos[0].segments
+    for i in range(len(segments)):
+        # Calculate duration based on original video timing
+        segment_dict = segments[i].dict()
+        segment_dict['duration'] = segments[i].end_time - segments[i].start_time
+        # Ensure minimum duration of 0.5s for very short segments
+        if segment_dict['duration'] < 0.5:
+            segment_dict['duration'] = 0.5
+        segments[i] = SegmentModel(**segment_dict)
+    
+    # Generate TTS for each segment
+    for i, segment in enumerate(segments):
         segment_text = segment.text.strip()
         if not segment_text:
             print(f"Job {request.job_id}: Skipping empty transcript segment {i+1}")
@@ -232,31 +245,54 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
         segment_output_path = job_temp_segments_dir / f"segment_{i+1}.wav"
         
         try:
-            print(f"Job {request.job_id}: Generating TTS for segment {i+1}...")
+            print(f"Job {request.job_id}: Processing segment {i+1}...")
+            print(f"Original timing: {segment.start_time:.2f}s - {segment.end_time:.2f}s ({segment.duration:.2f}s)")
             print(f"Segment text: {segment_text}")
-            print(f"Language: {request.language}, Speed: {request.speed}, Voice: {request.voice}")
             
             # Generate audio using Coqui TTS
             tts_kwargs = {
                 'text': segment_text,
-                # 'language': request.language,
                 'speed': request.speed
             }
             
-            print(f"TTS kwargs: {tts_kwargs}")
-            
             # Use the voice parameter if available
             if hasattr(tts, 'speaker_wav') and request.voice and request.voice != "default":
-                print(f"Using voice file: {request.voice}")
                 tts_kwargs['speaker_wav'] = request.voice
             
-            print("Calling TTS...")
+            print("Generating TTS audio...")
             audio = tts.tts(**tts_kwargs)
-            print(f"TTS returned audio of type: {type(audio)}")
             
             # Convert to numpy array and normalize to 16-bit PCM
             audio_np = np.array(audio)
             audio_np = (audio_np * 32767).astype(np.int16)
+            
+            # Calculate current and target durations (in seconds)
+            current_duration = len(audio_np) / 22050
+            target_duration = segment.duration
+            
+            print(f"Generated audio: {current_duration:.2f}s, Target: {target_duration:.2f}s")
+            
+            # Always ensure the audio matches the original segment duration
+            target_samples = int(target_duration * 22050)
+            
+            if current_duration > target_duration:
+                # If audio is too long, truncate it (this should be rare)
+                print(f"Truncating audio from {current_duration:.2f}s to {target_duration:.2f}s")
+                audio_np = audio_np[:target_samples]
+            else:
+                # If audio is shorter, add silence at the end to match the original timing
+                silence_duration = target_duration - current_duration
+                if silence_duration > 0:
+                    print(f"Adding {silence_duration:.2f}s of silence to match original timing")
+                    silence_samples = int(silence_duration * 22050)
+                    silence = np.zeros(silence_samples, dtype=np.int16)
+                    audio_np = np.concatenate([audio_np, silence])
+                
+                # Final length check to ensure exact duration
+                if len(audio_np) < target_samples:
+                    audio_np = np.pad(audio_np, (0, target_samples - len(audio_np)), 'constant')
+                elif len(audio_np) > target_samples:
+                    audio_np = audio_np[:target_samples]
             
             # Save as WAV file
             with io.BytesIO() as wav_buffer:
