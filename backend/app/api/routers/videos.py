@@ -173,12 +173,13 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
             print(f"Job {request.job_id}: Generating TTS for segment {i+1}...")
             
             # Generate audio using Coqui TTS
-            audio = tts.tts(
-                text=segment_text,
-                speaker=request.voice,
-                language=request.language,
-                speed=request.speed
-            )
+            tts_kwargs = {
+                'text': segment_text,
+                # 'language': request.language,
+                'speed': request.speed
+            }
+            
+            audio = tts.tts(**tts_kwargs)
             
             # Convert to numpy array and normalize to 16-bit PCM
             audio_np = np.array(audio)
@@ -233,8 +234,10 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
         message=final_message
     )
 
-# Note: Ensure this router (videos.router) is correctly included in your main API router
-# in backend/app/api/api_v1/api.py. For example:
-# from app.api.routers import videos 
-# api_router.include_router(videos.router, prefix="/videos", tags=["videos", "tts-poc"]) 
+# Register the TTS endpoint
+router.post(
+    "/generate-tts-audio", 
+    response_model=TTSResponse, 
+    tags=["tts-poc"]
+)(generate_tts_audio_endpoint)
 

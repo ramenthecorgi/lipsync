@@ -42,7 +42,7 @@ class Video(BaseModel, Base):
     duration = Column(Float, default=0.0)  # in seconds
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     status = Column(String(50), default="uploaded")  # uploaded, processing, ready, error
-    metadata = Column(JSON, nullable=True)  # Additional metadata as JSON
+    video_metadata = Column("metadata", JSON, nullable=True)  # Additional metadata as JSON
     
     # Relationships
     project = relationship("Project", back_populates="videos")
@@ -60,7 +60,7 @@ class VideoSegment(BaseModel, Base):
     text = Column(Text, nullable=True)  # Transcript text
     speaker = Column(String(100), nullable=True)
     is_edited = Column(Boolean, default=False)
-    metadata = Column(JSON, nullable=True)  # Additional metadata as JSON
+    segment_metadata = Column("metadata", JSON, nullable=True)  # Additional metadata as JSON
     
     # Relationships
     video = relationship("Video", back_populates="segments")
