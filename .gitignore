@@ -77,7 +77,11 @@ ENV/
 backend/.python-version
 backend/app/__pycache__/
 backend/app/models/__pycache__/
-backend/venv/
+backend/.venv/
 
-# Generated audio files
+# Generated files
 backend/output_audio/
+backend/output_videos/
+
+# Test assets
+backend/test_assets/
