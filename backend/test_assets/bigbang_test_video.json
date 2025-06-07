@@ -1,0 +1,39 @@
+{
+  "title": "bigbang_test_video",
+  "description": "Auto-generated from bigbang_test_video.mp4",
+  "is_public": false,
+  "videos": [
+    {
+      "title": "bigbang_test_video",
+      "file_path": "test_assets/bigbang_test_video.mp4",
+      "duration": 18.84,
+      "segments": [
+        {
+          "start_time": 2.22,
+          "end_time": 6.12,
+          "text": "Quick poll. PS4 or Xbox One. Raj."
+        },
+        {
+          "start_time": 6.56,
+          "end_time": 8.12,
+          "text": "Uh, Xbox One. Penny. Huh?"
+        },
+        {
+          "start_time": 9.620000000000001,
+          "end_time": 11.2,
+          "text": "Leonard. PS4."
+        },
+        {
+          "start_time": 11.44,
+          "end_time": 13.66,
+          "text": "Wallowicz. Both great. Bernadette."
+        },
+        {
+          "start_time": 13.96,
+          "end_time": 18.84,
+          "text": "I like the weed. Thanks, grandma."
+        }
+      ]
+    }
+  ]
+}

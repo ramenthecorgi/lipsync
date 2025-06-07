@@ -201,8 +201,7 @@ class VideoProcessor:
             combined = {
                 'start_time': current_batch[0]['start_time'],
                 'end_time': current_batch[-1]['end_time'],
-                'text': ' '.join(seg['text'].strip() for seg in current_batch if seg['text'].strip()),
-                'words': [word for seg in current_batch for word in seg.get('words', [])]
+                'text': ' '.join(seg['text'].strip() for seg in current_batch if seg['text'].strip())
             }
             
             combined_segments.append(combined)
@@ -226,23 +225,15 @@ class VideoProcessor:
         # Transcribe audio
         result = self.transcribe_audio(audio_path)
         
-        # Format segments according to Project model
-        segments = []
-        for segment in result['segments']:
-            segments.append({
+        # Format segments according to Project model (without word-level breakdown)
+        segments = [
+            {
                 'start_time': segment['start'],
                 'end_time': segment['end'],
-                'text': segment['text'].strip(),
-                'words': [
-                    {
-                        'word': word['word'].strip(),
-                        'start': word['start'],
-                        'end': word['end'],
-                        'confidence': word.get('probability', 1.0)
-                    }
-                    for word in segment.get('words', [])
-                ]
-            })
+                'text': segment['text'].strip()
+            }
+            for segment in result['segments']
+        ]
         
         # Combine segments to have approximately max_segments
         combined_segments = self._combine_segments(segments, max_segments)

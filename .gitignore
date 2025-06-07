@@ -84,4 +84,5 @@ backend/output_audio/
 backend/output_videos/
 
 # Test assets
-backend/test_assets/
+backend/test_assets/*.mp4
+backend/test_assets/.wav

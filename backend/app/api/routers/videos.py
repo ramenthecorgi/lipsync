@@ -59,19 +59,38 @@ except Exception as e:
     print(f"Could not initialize Coqui TTS: {e}")
 
 # --- Pydantic Models for TTS --- 
+class SegmentModel(BaseModel):
+    start_time: float = Field(..., description="Start time of the segment in seconds")
+    end_time: float = Field(..., description="End time of the segment in seconds")
+    text: str = Field(..., description="Text content of the segment")
+
+class VideoModel(BaseModel):
+    title: str = Field(..., description="Title of the video")
+    file_path: str = Field(..., description="Path to the video file")
+    duration: float = Field(..., description="Duration of the video in seconds")
+    segments: List[SegmentModel] = Field(..., description="List of segments in the video")
+
 class TTSRequest(BaseModel):
-    template_video_path: str = Field(
-        ..., 
-        description="Path to the template video (used for context, not processed in this phase).",
-        example="/path/to/some/dummy_video.mp4"
+    title: str = Field(
+        ...,
+        description="Title of the project.",
+        example="My Video Project"
     )
-    transcript_segments: List[str] = Field(
-        ..., 
-        description="List of text segments to convert to speech.",
-        example=["Hello world, this is the first sentence.", "This is the second sentence."]
+    description: str = Field(
+        default="",
+        description="Description of the project.",
+        example="Auto-generated video project"
+    )
+    is_public: bool = Field(
+        default=False,
+        description="Whether the project is public."
+    )
+    videos: List[VideoModel] = Field(
+        ...,
+        description="List of videos in the project with their segments."
     )
     job_id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()), 
+        default_factory=lambda: str(uuid.uuid4()),
         description="Unique ID for this job."
     )
     voice: str = Field(
@@ -166,9 +185,31 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
     if tts is None:
         try:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            tts = TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=False, gpu=torch.cuda.is_available())
+            print(f"Initializing TTS on device: {device}")
+            
+            # Use a simpler TTS model for testing
+            tts = TTS(
+                model_name="tts_models/en/ljspeech/tacotron2-DDC",
+                progress_bar=True,
+                gpu=torch.cuda.is_available()
+            )
+            
+            print("TTS model loaded successfully")
+            print(f"Available TTS models: {tts.list_models()}")
+            
         except Exception as e:
-            raise HTTPException(status_code=503, detail=f"Coqui TTS initialization failed: {str(e)}")
+            error_msg = f"Coqui TTS initialization failed: {str(e)}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "TTS initialization failed",
+                    "message": str(e),
+                    "type": type(e).__name__
+                }
+            )
 
     job_temp_segments_dir = TEMP_AUDIO_DIR / request.job_id
     try:
@@ -179,8 +220,12 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
     segment_audio_paths = []
     all_segments_processed_successfully = True
 
-    for i, segment_text in enumerate(request.transcript_segments):
-        if not segment_text.strip():
+    if not request.videos or not request.videos[0].segments:
+        raise HTTPException(status_code=400, detail="No video segments found in the request")
+
+    for i, segment in enumerate(request.videos[0].segments):
+        segment_text = segment.text.strip()
+        if not segment_text:
             print(f"Job {request.job_id}: Skipping empty transcript segment {i+1}")
             continue
             
@@ -188,6 +233,8 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
         
         try:
             print(f"Job {request.job_id}: Generating TTS for segment {i+1}...")
+            print(f"Segment text: {segment_text}")
+            print(f"Language: {request.language}, Speed: {request.speed}, Voice: {request.voice}")
             
             # Generate audio using Coqui TTS
             tts_kwargs = {
@@ -196,7 +243,16 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
                 'speed': request.speed
             }
             
+            print(f"TTS kwargs: {tts_kwargs}")
+            
+            # Use the voice parameter if available
+            if hasattr(tts, 'speaker_wav') and request.voice and request.voice != "default":
+                print(f"Using voice file: {request.voice}")
+                tts_kwargs['speaker_wav'] = request.voice
+            
+            print("Calling TTS...")
             audio = tts.tts(**tts_kwargs)
+            print(f"TTS returned audio of type: {type(audio)}")
             
             # Convert to numpy array and normalize to 16-bit PCM
             audio_np = np.array(audio)
