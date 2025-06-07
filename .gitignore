@@ -86,3 +86,7 @@ backend/output_videos/
 # Test assets
 backend/test_assets/*.mp4
 backend/test_assets/.wav
+
+# wav2lip
+backend/wav2lip_repo
+backend/wav2lip-venv

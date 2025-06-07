@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import os
 import shutil
-import subprocess # Added for running FFmpeg
+import subprocess
 from pathlib import Path
 from datetime import datetime
 import uuid
@@ -12,13 +12,22 @@ from TTS.api import TTS
 import numpy as np
 import soundfile as sf
 import io
-import subprocess
 import cv2
-import numpy as np
-import os
-import shutil
-from typing import Optional
-from pathlib import Path
+import logging
+import sys
+from typing import Optional, Tuple, List, Dict, Any
+
+# Add project root to path
+project_root = str(Path(__file__).parent.parent.parent)
+sys.path.insert(0, project_root)
+
+# Import Wav2Lip service
+try:
+    from app.services.wav2lip_service import Wav2LipService
+    WAV2LIP_AVAILABLE = True
+except ImportError:
+    WAV2LIP_AVAILABLE = False
+    logging.warning("Wav2Lip service not available. Lip-sync will be limited to basic audio muxing.")
 
 from pydantic import BaseModel, Field # Added for new Pydantic models
 
@@ -28,6 +37,28 @@ from ...core.security import get_current_active_user
 from ...config import settings
 
 router = APIRouter()
+
+def resolve_backend_path(path: str) -> str:
+    """
+    Resolve a path relative to the backend directory.
+    
+    Args:
+        path: The path to resolve. Can be absolute or relative.
+            If None, returns an empty string.
+            
+    Returns:
+        str: Absolute path resolved relative to the backend directory.
+    """
+    if not path:
+        return ""
+        
+    path = str(path)
+    if os.path.isabs(path):
+        return path
+        
+    # Get the backend directory (one level up from app directory)
+    backend_dir = Path(__file__).parent.parent.parent.parent  # Go up to backend/
+    return str((backend_dir / path).resolve())
 
 # --- TTS and Lip Sync POC Endpoints --- #
 
@@ -117,6 +148,22 @@ class LipSyncRequest(BaseModel):
     video_path: str = Field(..., description="Path to the input video file")
     audio_path: str = Field(..., description="Path to the audio file for lip-sync")
     output_path: Optional[str] = Field(None, description="Path to save the output video")
+    use_wav2lip: bool = Field(True, description="Whether to use Wav2Lip for lip-syncing (if available)")
+    face_det_batch_size: int = Field(1, description="Batch size for face detection")
+    wav2lip_batch_size: int = Field(16, description="Batch size for Wav2Lip")
+    resize_factor: int = Field(1, description="Reduce the resolution by this factor")
+    crop: Optional[Tuple[int, int, int, int]] = Field(
+        None,
+        description="Crop video (top, bottom, left, right)"
+    )
+    rotate: bool = Field(False, description="Rotate video 90 degrees counter-clockwise")
+    nosmooth: bool = Field(False, description="Disable smoothing of face detections")
+    fps: float = Field(25.0, description="FPS of output video")
+    pads: Tuple[int, int, int, int] = Field(
+        (0, 10, 0, 0),
+        description="Padding (top, bottom, left, right) for face detection"
+    )
+    static: bool = Field(False, description="Use first frame for all frames (for static images)")
     
 class LipSyncResponse(BaseModel):
     job_id: str
@@ -364,14 +411,22 @@ router.post(
     tags=["tts-poc"]
 )(generate_tts_audio_endpoint)
 
-def generate_lipsync_video(video_path: str, audio_path: str, output_path: Optional[str] = None) -> str:
+def generate_lipsync_video(
+    video_path: str,
+    audio_path: str,
+    output_path: Optional[str] = None,
+    use_wav2lip: bool = True,
+    **wav2lip_kwargs
+) -> str:
     """
-    Generate a lip-synced video by combining video with new audio
+    Generate a lip-synced video by combining video with new audio.
     
     Args:
         video_path: Path to the input video file
         audio_path: Path to the audio file to use for lip-syncing
         output_path: Optional output path for the result
+        use_wav2lip: Whether to use Wav2Lip for lip-syncing (if available)
+        **wav2lip_kwargs: Additional arguments to pass to Wav2Lip
         
     Returns:
         Path to the generated video file
@@ -379,9 +434,9 @@ def generate_lipsync_video(video_path: str, audio_path: str, output_path: Option
     try:
         print(f"Generating lip-synced video from {video_path} with audio {audio_path}")
         
-        # Convert to absolute paths to avoid any relative path issues
-        video_path = os.path.abspath(video_path)
-        audio_path = os.path.abspath(audio_path)
+        # Resolve input paths relative to backend directory
+        video_path = resolve_backend_path(video_path)
+        audio_path = resolve_backend_path(audio_path)
         
         # Verify input files exist
         if not os.path.isfile(video_path):
@@ -406,34 +461,53 @@ def generate_lipsync_video(video_path: str, audio_path: str, output_path: Option
         # Create a temporary output file in the same directory as the final output
         temp_output = f"{output_path}.temp.mp4"
         
-        # Use FFmpeg to combine video and audio
-        cmd = [
-            'ffmpeg',
-            '-y',  # Overwrite output files without asking
-            '-i', video_path,  # Input video
-            '-i', audio_path,  # Input audio
-            '-c:v', 'copy',  # Copy video stream without re-encoding
-            '-c:a', 'aac',  # Encode audio as AAC
-            '-strict', 'experimental',
-            '-map', '0:v:0',  # Use first video stream from first input
-            '-map', '1:a:0',  # Use first audio stream from second input
-            '-shortest',  # Finish encoding when the shortest input stream ends
-            temp_output
-        ]
+        # Use Wav2Lip if available and requested
+        if use_wav2lip and WAV2LIP_AVAILABLE:
+            try:
+                print("Using Wav2Lip for lip-syncing...")
+                wav2lip = Wav2LipService()
+                temp_output = wav2lip.generate_lipsync(
+                    video_path=video_path,
+                    audio_path=audio_path,
+                    output_path=temp_output,
+                    **wav2lip_kwargs
+                )
+                print(f"Wav2Lip processing complete. Output at: {temp_output}")
+            except Exception as e:
+                print(f"Wav2Lip processing failed: {str(e)}")
+                print("Falling back to basic audio muxing...")
+                use_wav2lip = False
         
-        print(f"Running command: {' '.join(cmd)}")
-        
-        # Run the command and capture output for debugging
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            error_msg = f"FFmpeg command failed with error:\n{result.stderr}"
-            print(error_msg)
-            raise RuntimeError(f"Failed to process video: {error_msg}")
+        # Fall back to basic audio muxing if Wav2Lip is not available or failed
+        if not use_wav2lip or not WAV2LIP_AVAILABLE:
+            print("Using basic audio muxing (no lip-sync)")
+            cmd = [
+                'ffmpeg',
+                '-y',  # Overwrite output files without asking
+                '-i', video_path,  # Input video
+                '-i', audio_path,  # Input audio
+                '-c:v', 'copy',  # Copy video stream without re-encoding
+                '-c:a', 'aac',  # Encode audio as AAC
+                '-strict', 'experimental',
+                '-map', '0:v:0',  # Use first video stream from first input
+                '-map', '1:a:0',  # Use first audio stream from second input
+                '-shortest',  # Finish encoding when the shortest input stream ends
+                temp_output
+            ]
+            
+            print(f"Running command: {' '.join(cmd)}")
+            
+            # Run the command and capture output for debugging
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                error_msg = f"FFmpeg command failed with error:\n{result.stderr}"
+                print(error_msg)
+                raise RuntimeError(f"Failed to process video: {error_msg}")
         
         # Verify the output file was created
         if not os.path.exists(temp_output):
-            raise RuntimeError("FFmpeg did not create the output file")
+            raise RuntimeError("Failed to create output file")
             
         # Replace the original file if it exists
         if os.path.exists(output_path):
@@ -443,7 +517,7 @@ def generate_lipsync_video(video_path: str, audio_path: str, output_path: Option
         if not os.path.exists(output_path):
             raise RuntimeError(f"Failed to create output file at {output_path}")
             
-        print(f"Successfully created lip-synced video at {output_path}")
+        print(f"Successfully created {'lip-synced ' if use_wav2lip and WAV2LIP_AVAILABLE else ''}video at {output_path}")
         return output_path
         
     except Exception as e:
@@ -454,19 +528,15 @@ def generate_lipsync_video(video_path: str, audio_path: str, output_path: Option
 async def generate_lipsync_endpoint(request: LipSyncRequest = Body(...)):
     """
     Generate a lip-synced video from a source video and audio file.
+    
+    This endpoint uses Wav2Lip for high-quality lip-syncing when available.
     """
     try:
-        # Convert relative paths to absolute paths relative to the project root
+        # Convert relative paths to absolute paths relative to the backend directory
         def resolve_path(path: str) -> str:
-            if not path:
-                return path
-            # If path is already absolute, return as is
-            if os.path.isabs(path):
-                return path
-            # Get the project root (one level up from the app directory)
-            project_root = Path(__file__).parent.parent.parent.parent
-            # Resolve the path relative to project root
-            return str((project_root / path).resolve())
+            resolved = resolve_backend_path(path)
+            print(f"Resolved path: {path} -> {resolved}")  # Debug log
+            return resolved
         
         video_path = resolve_path(request.video_path)
         audio_path = resolve_path(request.audio_path)
@@ -478,11 +548,26 @@ async def generate_lipsync_endpoint(request: LipSyncRequest = Body(...)):
         if not os.path.isfile(audio_path):
             raise ValueError(f"Audio file not found: {audio_path}")
         
+        # Prepare Wav2Lip parameters
+        wav2lip_params = {
+            'use_wav2lip': request.use_wav2lip,
+            'face_det_batch_size': request.face_det_batch_size,
+            'wav2lip_batch_size': request.wav2lip_batch_size,
+            'resize_factor': request.resize_factor,
+            'crop': request.crop,
+            'rotate': request.rotate,
+            'nosmooth': request.nosmooth,
+            'fps': request.fps,
+            'pads': request.pads,
+            'static': request.static
+        }
+        
         # Generate lip-synced video
         output_path = generate_lipsync_video(
             video_path=video_path,
             audio_path=audio_path,
-            output_path=output_path
+            output_path=output_path,
+            **wav2lip_params
         )
         
         # Convert output path to relative for the response
