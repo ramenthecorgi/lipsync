@@ -366,64 +366,84 @@ router.post(
 
 def generate_lipsync_video(video_path: str, audio_path: str, output_path: Optional[str] = None) -> str:
     """
-    Generate a lip-synced video using Wav2Lip
+    Generate a lip-synced video by combining video with new audio
+    
+    Args:
+        video_path: Path to the input video file
+        audio_path: Path to the audio file to use for lip-syncing
+        output_path: Optional output path for the result
+        
+    Returns:
+        Path to the generated video file
     """
-    # Create output directory if it doesn't exist
-    output_dir = Path("output_videos")
-    output_dir.mkdir(exist_ok=True)
-    
-    # Set default output path if not provided
-    if output_path is None:
-        output_path = str(output_dir / f"lipsync_{Path(video_path).stem}.mp4")
-    
     try:
-        # This is a placeholder for the Wav2Lip inference
-        # In a real implementation, you would call the Wav2Lip model here
         print(f"Generating lip-synced video from {video_path} with audio {audio_path}")
+        
+        # Convert to absolute paths to avoid any relative path issues
+        video_path = os.path.abspath(video_path)
+        audio_path = os.path.abspath(audio_path)
+        
+        # Verify input files exist
+        if not os.path.isfile(video_path):
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+        if not os.path.isfile(audio_path):
+            raise FileNotFoundError(f"Audio file not found: {audio_path}")
+        
+        # Set default output path if not provided
+        if output_path is None:
+            output_dir = os.path.abspath("output_videos")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, f"lipsync_output_{int(time.time())}.mp4")
+        else:
+            output_path = os.path.abspath(output_path)
+            # Create output directory if it doesn't exist
+            output_dir = os.path.dirname(output_path)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+        
         print(f"Output will be saved to: {output_path}")
         
-        # For now, we'll just copy the video as a placeholder
-        # In a real implementation, you would use the Wav2Lip model here
-        video = cv2.VideoCapture(video_path)
-        fps = video.get(cv2.CAP_PROP_FPS)
-        width = int(video.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(video.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        # Create a temporary output file in the same directory as the final output
+        temp_output = f"{output_path}.temp.mp4"
         
-        # Create a video writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-        
-        # Process video frames (just copy them for now)
-        while True:
-            ret, frame = video.read()
-            if not ret:
-                break
-            out.write(frame)
-        
-        video.release()
-        out.release()
-        
-        # Add audio to the video
-        temp_output = str(output_path).replace('.mp4', '_temp.mp4')
+        # Use FFmpeg to combine video and audio
         cmd = [
             'ffmpeg',
-            '-y',
-            '-i', output_path,
-            '-i', audio_path,
-            '-c:v', 'copy',
-            '-c:a', 'aac',
+            '-y',  # Overwrite output files without asking
+            '-i', video_path,  # Input video
+            '-i', audio_path,  # Input audio
+            '-c:v', 'copy',  # Copy video stream without re-encoding
+            '-c:a', 'aac',  # Encode audio as AAC
             '-strict', 'experimental',
-            '-map', '0:v:0',
-            '-map', '1:a:0',
-            '-shortest',
+            '-map', '0:v:0',  # Use first video stream from first input
+            '-map', '1:a:0',  # Use first audio stream from second input
+            '-shortest',  # Finish encoding when the shortest input stream ends
             temp_output
         ]
         
-        subprocess.run(cmd, check=True)
+        print(f"Running command: {' '.join(cmd)}")
         
-        # Replace the original file
-        os.replace(temp_output, output_path)
+        # Run the command and capture output for debugging
+        result = subprocess.run(cmd, capture_output=True, text=True)
         
+        if result.returncode != 0:
+            error_msg = f"FFmpeg command failed with error:\n{result.stderr}"
+            print(error_msg)
+            raise RuntimeError(f"Failed to process video: {error_msg}")
+        
+        # Verify the output file was created
+        if not os.path.exists(temp_output):
+            raise RuntimeError("FFmpeg did not create the output file")
+            
+        # Replace the original file if it exists
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        os.rename(temp_output, output_path)
+        
+        if not os.path.exists(output_path):
+            raise RuntimeError(f"Failed to create output file at {output_path}")
+            
+        print(f"Successfully created lip-synced video at {output_path}")
         return output_path
         
     except Exception as e:
@@ -436,20 +456,47 @@ async def generate_lipsync_endpoint(request: LipSyncRequest = Body(...)):
     Generate a lip-synced video from a source video and audio file.
     """
     try:
+        # Convert relative paths to absolute paths relative to the project root
+        def resolve_path(path: str) -> str:
+            if not path:
+                return path
+            # If path is already absolute, return as is
+            if os.path.isabs(path):
+                return path
+            # Get the project root (one level up from the app directory)
+            project_root = Path(__file__).parent.parent.parent.parent
+            # Resolve the path relative to project root
+            return str((project_root / path).resolve())
+        
+        video_path = resolve_path(request.video_path)
+        audio_path = resolve_path(request.audio_path)
+        output_path = resolve_path(request.output_path) if request.output_path else None
+        
+        # Verify input files exist
+        if not os.path.isfile(video_path):
+            raise ValueError(f"Video file not found: {video_path}")
+        if not os.path.isfile(audio_path):
+            raise ValueError(f"Audio file not found: {audio_path}")
+        
         # Generate lip-synced video
         output_path = generate_lipsync_video(
-            video_path=request.video_path,
-            audio_path=request.audio_path,
-            output_path=request.output_path
+            video_path=video_path,
+            audio_path=audio_path,
+            output_path=output_path
         )
+        
+        # Convert output path to relative for the response
+        relative_output = os.path.relpath(output_path, Path(__file__).parent.parent.parent)
         
         return LipSyncResponse(
             job_id=str(uuid.uuid4()),
-            output_path=output_path,
+            output_path=relative_output,
             message="Lip-sync generation completed successfully"
         )
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()  # Print full traceback for debugging
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate lip-synced video: {str(e)}"

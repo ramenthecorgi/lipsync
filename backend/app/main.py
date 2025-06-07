@@ -20,9 +20,9 @@ app = FastAPI(
     title="Video Editor API",
     description="Backend API for the Video Editor application",
     version="0.1.0",
-    openapi_url="/api/openapi.json" if settings.ENV != "production" else None,
-    docs_url="/api/docs" if settings.ENV != "production" else None,
-    redoc_url="/api/redoc" if settings.ENV != "production" else None,
+    openapi_url="/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc" if settings.ENV != "production" else None,
 )
 
 # Set up CORS
