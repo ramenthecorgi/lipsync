@@ -78,3 +78,6 @@ backend/.python-version
 backend/app/__pycache__/
 backend/app/models/__pycache__/
 backend/venv/
+
+# Generated audio files
+backend/output_audio/
