@@ -1,15 +1,37 @@
 // Paste your TSX component code here
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, RotateCcw, RotateCw, Edit3, Volume2, Eye, Save, AlertTriangle, Sparkles } from 'lucide-react';
+import { Play, Pause, RotateCcw, RotateCw, Edit3, Volume2, Eye, Save, AlertTriangle, Sparkles, LayoutGrid } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+
+// Dummy video data
+const dummyVideos = [
+  { id: 'vid1', title: 'Summer Vacation Highlights', thumbnailUrl: 'https://via.placeholder.com/150/FFC107/000000?Text=Video1', duration: 125 },
+  { id: 'vid2', title: 'Cooking Masterclass: Pasta', thumbnailUrl: 'https://via.placeholder.com/150/4CAF50/FFFFFF?Text=Video2', duration: 320 },
+  { id: 'vid3', title: 'Tech Review: New Gadgets', thumbnailUrl: 'https://via.placeholder.com/150/2196F3/FFFFFF?Text=Video3', duration: 180 },
+  { id: 'vid4', title: 'Fitness Challenge Day 10', thumbnailUrl: 'https://via.placeholder.com/150/E91E63/FFFFFF?Text=Video4', duration: 240 },
+];
 
 export default function VideoEditorInterface() {
+  const { videoId: videoIdFromUrl } = useParams<{ videoId: string }>();
+  const navigate = useNavigate();
+  const [availableVideos, setAvailableVideos] = useState(dummyVideos);
+  const [selectedVideoId, setSelectedVideoId] = useState(dummyVideos[0].id); // Default video
+
+  useEffect(() => {
+    if (videoIdFromUrl && availableVideos.some(v => v.id === videoIdFromUrl)) {
+      setSelectedVideoId(videoIdFromUrl);
+    }
+    // If videoIdFromUrl is not present or invalid, selectedVideoId remains its current value (default or last valid).
+  }, [videoIdFromUrl, availableVideos]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [selectedSegment, setSelectedSegment] = useState(2);
   const [editText, setEditText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const videoRef = useRef(null);
+
+  const selectedVideo = availableVideos.find(v => v.id === selectedVideoId);
 
   const segments = [
     { id: 1, label: 'Segment 01', startTime: 0.0, endTime: 3.2, speaker: 'Jane Smith', originalText: 'Hello everyone, welcome to our presentation today.', color: 'from-purple-500 to-pink-500' },
@@ -80,16 +102,32 @@ export default function VideoEditorInterface() {
           <p className="text-slate-400 text-sm">Create, edit, and sync your video content with precision</p>
         </div>
 
+
+
         {/* Video Preview Section */}
+        {selectedVideo && (
+          <div className="mb-2 text-slate-400">
+            Currently editing: <span className="font-semibold text-purple-400">{selectedVideo.title}</span>
+          </div>
+        )}
         <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 mb-8 shadow-2xl">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-orange-500 rounded-xl flex items-center justify-center shadow-lg">
                 <span className="text-white text-lg">📼</span>
               </div>
-              <div>
-                <h2 className="text-xl font-semibold text-white">Video Preview</h2>
-                <p className="text-slate-400 text-sm">Interactive timeline playback</p>
+              <div className="flex items-center gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Video Preview</h2>
+                  <p className="text-slate-400 text-sm">Interactive timeline playback</p>
+                </div>
+                <button
+                  onClick={() => navigate('/templates')}
+                  className="group flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600/80 text-slate-300 hover:text-white rounded-lg transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+                >
+                  <LayoutGrid size={16} />
+                  Change Template
+                </button>
               </div>
             </div>
             
@@ -129,7 +167,7 @@ export default function VideoEditorInterface() {
                 <div className="text-slate-400 text-sm mb-4">Selected: {currentSegment.label}</div>
                 
                 {/* Progress bar */}
-                <div className="w-64 h-2 bg-slate-700 rounded-full mx-auto overflow-hidden">
+                <div className="w-full bg-slate-800/50 aspect-video rounded-xl shadow-lg overflow-hidden relative group">
                   <div 
                     className={`h-full bg-gradient-to-r ${currentSegment.color} rounded-full transition-all duration-300`}
                     style={{ width: `${(currentTime / 13.5) * 100}%` }}
