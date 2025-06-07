@@ -1,49 +1,56 @@
 // Paste your TSX component code here
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, RotateCcw, RotateCw, Edit3, Volume2, Eye, Save, AlertTriangle, Sparkles, LayoutGrid } from 'lucide-react';
+import { Play, Pause, RotateCcw, RotateCw, Edit3, Save, AlertTriangle, Sparkles, LayoutGrid, Film, Loader2 } from 'lucide-react'; // Removed Volume2, Eye
 import { useParams, useNavigate } from 'react-router-dom';
-
-// Dummy video data
-const dummyVideos = [
-  { id: 'vid1', title: 'Summer Vacation Highlights', thumbnailUrl: 'https://via.placeholder.com/150/FFC107/000000?Text=Video1', duration: 125 },
-  { id: 'vid2', title: 'Cooking Masterclass: Pasta', thumbnailUrl: 'https://via.placeholder.com/150/4CAF50/FFFFFF?Text=Video2', duration: 320 },
-  { id: 'vid3', title: 'Tech Review: New Gadgets', thumbnailUrl: 'https://via.placeholder.com/150/2196F3/FFFFFF?Text=Video3', duration: 180 },
-  { id: 'vid4', title: 'Fitness Challenge Day 10', thumbnailUrl: 'https://via.placeholder.com/150/E91E63/FFFFFF?Text=Video4', duration: 240 },
-];
+import { VideoProject, VideoSegment, Speaker } from './types/video'; // Corrected import path for types
+import { getDummyProject, dummyTemplates } from './data'; // Corrected import path for data
 
 export default function VideoEditorInterface() {
   const { videoId: videoIdFromUrl } = useParams<{ videoId: string }>();
   const navigate = useNavigate();
-  const [availableVideos, setAvailableVideos] = useState(dummyVideos);
-  const [selectedVideoId, setSelectedVideoId] = useState(dummyVideos[0].id); // Default video
 
-  useEffect(() => {
-    if (videoIdFromUrl && availableVideos.some(v => v.id === videoIdFromUrl)) {
-      setSelectedVideoId(videoIdFromUrl);
-    }
-    // If videoIdFromUrl is not present or invalid, selectedVideoId remains its current value (default or last valid).
-  }, [videoIdFromUrl, availableVideos]);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [selectedSegment, setSelectedSegment] = useState(2);
+  const [project, setProject] = useState<VideoProject | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const videoRef = useRef(null);
+  const videoRef = useRef<HTMLVideoElement>(null); // Keep for potential future video element integration
 
-  const selectedVideo = availableVideos.find(v => v.id === selectedVideoId);
+  useEffect(() => {
+    const loadProject = () => {
+      setIsLoading(true);
+      setError(null);
+      // Use videoIdFromUrl if available, otherwise a default project ID (e.g., from the first dummy template)
+      const projectIdToLoad = videoIdFromUrl || dummyTemplates[0]?.id || 'template_1'; 
+      
+      // In a real app, this would be an API call: fetchVideoProject(projectIdToLoad)
+      const loadedProject = getDummyProject(projectIdToLoad.replace('template_', 'project_')); // Adjust if your project IDs differ from template IDs
+      
+      if (loadedProject) {
+        setProject(loadedProject);
+        if (loadedProject.segments && loadedProject.segments.length > 0) {
+          setSelectedSegmentId(loadedProject.segments[0].id);
+          setEditText(loadedProject.segments[0].originalText);
+        }
+      } else {
+        setError(`Project with ID ${projectIdToLoad} not found.`);
+      }
+      setIsLoading(false);
+    };
 
-  const segments = [
-    { id: 1, label: 'Segment 01', startTime: 0.0, endTime: 3.2, speaker: 'Jane Smith', originalText: 'Hello everyone, welcome to our presentation today.', color: 'from-purple-500 to-pink-500' },
-    { id: 2, label: 'Segment 02', startTime: 3.2, endTime: 6.0, speaker: 'John Doe', originalText: 'Thank you Jane. Let me start with our key findings.', color: 'from-blue-500 to-cyan-500' },
-    { id: 3, label: 'Segment 03', startTime: 6.0, endTime: 9.4, speaker: 'John Doe', originalText: 'We really believe this is a game-changer for small businesses.', color: 'from-emerald-500 to-teal-500' },
-    { id: 4, label: 'Segment 04', startTime: 9.4, endTime: 11.0, speaker: 'Jane Smith', originalText: 'The results speak for themselves.', color: 'from-orange-500 to-red-500' },
-    { id: 5, label: 'Segment 05', startTime: 11.0, endTime: 13.5, speaker: 'John Doe', originalText: 'Moving forward, we see tremendous opportunities ahead.', color: 'from-indigo-500 to-purple-500' }
-  ];
+    loadProject();
+  }, [videoIdFromUrl]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
 
-  const currentSegment = segments[selectedSegment];
-  const segmentDuration = currentSegment.endTime - currentSegment.startTime;
-  
+  // Derived states from project
+  const currentSegment = project?.segments.find((s: VideoSegment) => s.id === selectedSegmentId);
+  const currentSpeaker = project?.speakers.find((spk: Speaker) => spk.id === currentSegment?.speakerId);
+  const segmentDuration = currentSegment ? currentSegment.endTime - currentSegment.startTime : 0;
+
   const estimateTextDuration = (text) => {
     const words = text.trim().split(/\s+/).filter(word => word.length > 0);
     const wordsPerSecond = 150 / 60;
@@ -54,8 +61,12 @@ export default function VideoEditorInterface() {
   const exceedsLimit = editedDuration > segmentDuration;
 
   useEffect(() => {
-    setEditText(currentSegment.originalText);
-  }, [selectedSegment]);
+    if (currentSegment) {
+      setEditText(currentSegment.editedText || currentSegment.originalText);
+      // Optionally, set currentTime to the start of the selected segment
+      // setCurrentTime(currentSegment.startTime);
+    }
+  }, [selectedSegmentId, project]); // Re-run if selectedSegmentId or the whole project changes
 
   const handlePlayPause = () => {
     setIsPlaying(!isPlaying);
@@ -69,9 +80,12 @@ export default function VideoEditorInterface() {
     setCurrentTime(currentTime + 5);
   };
 
-  const handleSegmentClick = (index) => {
-    setSelectedSegment(index);
-    setCurrentTime(segments[index].startTime);
+  const handleSegmentClick = (segmentId: string) => {
+    setSelectedSegmentId(segmentId);
+    const segment = project?.segments.find((s: VideoSegment) => s.id === segmentId);
+    if (segment) {
+      setCurrentTime(segment.startTime); // Sync player time to segment start
+    }
   };
 
   const handleGenerateVoice = () => {
@@ -93,21 +107,19 @@ export default function VideoEditorInterface() {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-              <span className="text-white text-sm font-bold">V</span>
+              <Film size={16} className="text-white" />
             </div>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
-              Video Editor Studio
+              {project?.video.title || 'Video Editor Studio'}
             </h1>
           </div>
-          <p className="text-slate-400 text-sm">Create, edit, and sync your video content with precision</p>
+          <p className="text-slate-400 text-sm">{project?.video.description || 'Create, edit, and sync your video content with precision'}</p>
         </div>
 
-
-
         {/* Video Preview Section */}
-        {selectedVideo && (
+        {project?.video && (
           <div className="mb-2 text-slate-400">
-            Currently editing: <span className="font-semibold text-purple-400">{selectedVideo.title}</span>
+            Currently editing: <span className="font-semibold text-purple-400">{project.video.title}</span>
           </div>
         )}
         <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 mb-8 shadow-2xl">
@@ -164,17 +176,17 @@ export default function VideoEditorInterface() {
               <div className="relative text-center z-10">
                 <div className="text-6xl mb-4 animate-bounce">🎬</div>
                 <div className="text-white text-lg font-medium mb-2">Video frame playing in sync</div>
-                <div className="text-slate-400 text-sm mb-4">Selected: {currentSegment.label}</div>
+                <div className="text-slate-400 text-sm mb-4">Selected: {currentSegment?.id || 'N/A'}</div>
                 
                 {/* Progress bar */}
                 <div className="w-full bg-slate-800/50 aspect-video rounded-xl shadow-lg overflow-hidden relative group">
                   <div 
-                    className={`h-full bg-gradient-to-r ${currentSegment.color} rounded-full transition-all duration-300`}
-                    style={{ width: `${(currentTime / 13.5) * 100}%` }}
+                    className={`h-full bg-gradient-to-r ${currentSegment?.style?.gradient || 'from-gray-500 to-gray-600'} rounded-full transition-all duration-300`}
+                    style={{ width: `${(currentTime / (project?.video.duration || 1)) * 100}%` }}
                   ></div>
                 </div>
                 <div className="text-slate-300 text-xs mt-2">
-                  {currentTime.toFixed(1)}s / 13.5s
+                  {currentTime.toFixed(1)}s / {(project?.video.duration || 0).toFixed(1)}s
                 </div>
               </div>
             </div>
@@ -188,36 +200,31 @@ export default function VideoEditorInterface() {
             <p className="text-slate-400 text-sm">Click any segment to edit its content</p>
           </div>
           
-          <div className="grid grid-cols-5">
-            {segments.map((segment, index) => (
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-0">
+            {project?.segments.map((segment: VideoSegment) => (
               <button
                 key={segment.id}
-                onClick={() => handleSegmentClick(index)}
-                className={`group relative p-6 border-r border-slate-700/50 last:border-r-0 transition-all duration-300 hover:bg-slate-700/30 ${
-                  selectedSegment === index 
+                onClick={() => handleSegmentClick(segment.id)}
+                className={`group relative p-6 border-r border-slate-700/50 last:border-r-0 transition-all duration-300 hover:bg-slate-700/30 ${selectedSegmentId === segment.id 
                     ? 'bg-slate-700/50' 
                     : ''
                 }`}
               >
-                <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${segment.color} ${
-                  selectedSegment === index ? 'opacity-100' : 'opacity-30 group-hover:opacity-60'
+                <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${segment.style?.gradient || 'from-gray-500 to-gray-600'} ${selectedSegmentId === segment.id ? 'opacity-100' : 'opacity-30 group-hover:opacity-60'
                 } transition-opacity duration-300`}></div>
                 
                 <div className="text-center">
-                  <div className={`font-semibold mb-2 transition-colors duration-300 ${
-                    selectedSegment === index ? 'text-white' : 'text-slate-300 group-hover:text-white'
+                  <div className={`font-semibold mb-2 transition-colors duration-300 ${selectedSegmentId === segment.id ? 'text-white' : 'text-slate-300 group-hover:text-white'
                   }`}>
-                    {segment.label}
+                    Segment {segment.order} {/* Using order for label */}
                   </div>
-                  <div className={`text-sm transition-colors duration-300 ${
-                    selectedSegment === index ? 'text-slate-300' : 'text-slate-500 group-hover:text-slate-400'
+                  <div className={`text-sm transition-colors duration-300 ${selectedSegmentId === segment.id ? 'text-slate-300' : 'text-slate-500 group-hover:text-slate-400'
                   }`}>
-                    {segment.startTime}s–{segment.endTime}s
+                    {segment.startTime.toFixed(1)}s–{segment.endTime.toFixed(1)}s
                   </div>
-                  <div className={`text-xs mt-1 transition-colors duration-300 ${
-                    selectedSegment === index ? 'text-slate-400' : 'text-slate-600'
+                  <div className={`text-xs mt-1 transition-colors duration-300 ${selectedSegmentId === segment.id ? 'text-slate-400' : 'text-slate-600'
                   }`}>
-                    {segment.speaker}
+                    {project.speakers.find((spk: Speaker) => spk.id === segment.speakerId)?.name || 'Unknown Speaker'}
                   </div>
                 </div>
               </button>
@@ -226,10 +233,11 @@ export default function VideoEditorInterface() {
         </div>
 
         {/* Editable Segment */}
+        {currentSegment && currentSpeaker && (
         <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 shadow-2xl">
           <div className="flex items-center gap-3 mb-6">
-            <div className={`w-3 h-6 bg-gradient-to-b ${currentSegment.color} rounded-full`}></div>
-            <h3 className="text-xl font-semibold text-white">Edit {currentSegment.label}</h3>
+            <div className={`w-3 h-6 bg-gradient-to-b ${currentSegment.style?.gradient || 'from-gray-500 to-gray-600'} rounded-full`}></div>
+            <h3 className="text-xl font-semibold text-white">Edit Segment {currentSegment.order}</h3>
             <div className="ml-auto text-slate-400 text-sm">
               {segmentDuration.toFixed(1)}s available
             </div>
@@ -241,11 +249,11 @@ export default function VideoEditorInterface() {
               <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700/30">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center">
-                    <span className="text-white text-sm">🗣️</span>
+                    <img src={currentSpeaker.avatarUrl || `https://via.placeholder.com/32/${currentSpeaker.id.slice(-6)}/FFFFFF?text=${currentSpeaker.name[0]}`} alt={currentSpeaker.name} className="w-full h-full rounded-lg object-cover" />
                   </div>
                   <div>
-                    <div className="text-white font-medium">{currentSegment.speaker}</div>
-                    <div className="text-slate-400 text-sm">Speaker</div>
+                    <div className="text-white font-medium">{currentSpeaker.name}</div>
+                    <div className="text-slate-400 text-sm">{currentSpeaker.role || 'Speaker'}</div>
                   </div>
                 </div>
                 
@@ -255,7 +263,7 @@ export default function VideoEditorInterface() {
                   </div>
                   <div>
                     <div className="text-white font-medium">
-                      {currentSegment.startTime}s → {currentSegment.endTime}s
+                      {currentSegment.startTime.toFixed(1)}s → {currentSegment.endTime.toFixed(1)}s
                     </div>
                     <div className="text-slate-400 text-sm">
                       Duration: {segmentDuration.toFixed(1)} seconds
@@ -327,40 +335,31 @@ export default function VideoEditorInterface() {
           <div className="flex flex-wrap gap-4 pt-8 border-t border-slate-700/50 mt-8">
             <button 
               onClick={handleGenerateVoice}
-              disabled={isGenerating}
-              className="group flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all duration-200 shadow-lg hover:shadow-emerald-500/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              disabled={isGenerating || !currentSegment}
+              className={`group flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg hover:-translate-y-0.5 ${isGenerating || !currentSegment ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-600/30' : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 hover:shadow-purple-500/30'}`}
             >
               {isGenerating ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span>Generating...</span>
+                </>
               ) : (
-                <Volume2 size={18} />
+                <>
+                  <Sparkles size={18} />
+                  <span>Generate Voice & Sync</span>
+                </>
               )}
-              <span className="font-medium">
-                {isGenerating ? 'Generating...' : 'Generate Voice'}
-              </span>
-              {!isGenerating && <Sparkles size={16} className="opacity-70" />}
-            </button>
-            
-            <button className="flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all duration-200 shadow-lg hover:shadow-blue-500/25 hover:-translate-y-0.5">
-              <span className="text-lg">🎧</span>
-              <span className="font-medium">Preview Audio</span>
-            </button>
-            
-            <button className="flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:from-purple-600 hover:to-pink-600 transition-all duration-200 shadow-lg hover:shadow-purple-500/25 hover:-translate-y-0.5">
-              <Eye size={18} />
-              <span className="font-medium">Lip Sync Preview</span>
             </button>
             
             <button 
-              className={`flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-200 font-medium ${
-                exceedsLimit 
+              className={`flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-200 font-medium ${exceedsLimit || !currentSegment 
                   ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-600/30' 
                   : 'bg-gradient-to-r from-slate-600 to-slate-700 text-white hover:from-slate-500 hover:to-slate-600 shadow-lg hover:shadow-slate-500/25 hover:-translate-y-0.5'
               }`}
-              disabled={exceedsLimit}
+              disabled={exceedsLimit || !currentSegment}
             >
               <Save size={18} />
-              Save Changes
+              <span>Save Segment Changes</span>
             </button>
           </div>
 
@@ -374,6 +373,33 @@ export default function VideoEditorInterface() {
             </div>
           </div>
         </div>
+        )}
+
+        {/* Loading and Error States */}
+        {isLoading && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="flex flex-col items-center p-8 bg-slate-800 rounded-xl shadow-2xl">
+              <Loader2 size={48} className="text-purple-400 animate-spin mb-4" />
+              <p className="text-white text-lg">Loading Video Project...</p>
+            </div>
+          </div>
+        )}
+
+        {error && !isLoading && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="flex flex-col items-center p-8 bg-red-800/50 border border-red-700 rounded-xl shadow-2xl text-white">
+              <AlertTriangle size={48} className="text-red-400 mb-4" />
+              <h3 className="text-xl font-semibold mb-2">Error Loading Project</h3>
+              <p className="text-red-300 mb-4">{error}</p>
+              <button 
+                onClick={() => navigate('/templates')}
+                className="px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-medium transition-colors"
+              >
+                Back to Templates
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
