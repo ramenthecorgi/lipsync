@@ -1,8 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime, timezone
 from enum import Enum
+from sqlalchemy.orm import Session
+
+from app.models.models import VideoTemplate as VideoTemplateModel
+from app.database import get_db
 
 router = APIRouter()
 
@@ -117,7 +121,10 @@ async def list_templates():
     return TEMPLATES
 
 @router.get("/{template_id}", response_model=VideoProject)
-async def get_template(template_id: str):
+async def get_template(
+    template_id: str,
+    db: Session = Depends(get_db)
+):
     """
     Get detailed information about a specific template, including segments and speakers.
     

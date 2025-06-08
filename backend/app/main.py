@@ -4,11 +4,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 import os
+import sys
 import uvicorn
 from typing import List
 
-from app import models
-from app.database import engine, get_db, init_db
+# Add the backend directory to the Python path
+# sys.path.append(str(Path(__file__).parent.parent))
+
+# Import models and database
+from app.models import models
+from app.database import engine, get_db, SessionLocal
 from app.config import settings
 from app.api.api_v1.api import api_router
 

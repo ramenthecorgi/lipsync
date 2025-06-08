@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 import os
 from pathlib import Path
 
@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     ]
     
     # Database settings (SQLite for development, can be changed to PostgreSQL in production)
-    DATABASE_URL: str = "sqlite:///./sql_app.db"
+    SQLALCHEMY_DATABASE_URL: str = "sqlite:///./sql_app.db"
     
     # File storage
     UPLOAD_DIR: str = "uploads"
