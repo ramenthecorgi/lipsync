@@ -37,9 +37,9 @@ class VideoTemplate(BaseModel, Base):
     __tablename__ = "video_templates"
     
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
     video_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # URL to the video file on the backend
-    video_project: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)  # Validated against VideoProjectSchema
+    video_project: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=True)  # Validated against VideoProjectSchema
     
     @property
     def video_project_data(self) -> Optional[VideoProjectSchema]:
