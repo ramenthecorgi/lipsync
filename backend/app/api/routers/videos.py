@@ -12,7 +12,6 @@ from TTS.api import TTS
 import numpy as np
 import soundfile as sf
 import io
-import cv2
 import logging
 import sys
 from typing import Optional, Tuple, List, Dict, Any
@@ -30,11 +29,6 @@ except ImportError:
     logging.warning("Wav2Lip service not available. Lip-sync will be limited to basic audio muxing.")
 
 from pydantic import BaseModel, Field # Added for new Pydantic models
-
-from ... import schemas, models
-from ...database import get_db
-from ...core.security import get_current_active_user
-from ...config import settings
 
 router = APIRouter()
 
@@ -89,86 +83,109 @@ except Exception as e:
     tts = None
     print(f"Could not initialize Coqui TTS: {e}")
 
-# --- Pydantic Models for TTS --- 
-class SegmentModel(BaseModel):
+class TranscriptSegment(BaseModel):
     start_time: float = Field(..., description="Start time of the segment in seconds")
     end_time: float = Field(..., description="End time of the segment in seconds")
-    text: str = Field(default="", description="Text content of the segment")
-    duration: Optional[float] = Field(None, description="Duration of the segment in seconds")
-    is_silence: bool = Field(default=False, description="Whether this is a silent segment")
+    text: str = Field(..., description="Text content of the segment")
+    is_silence: bool = Field(False, description="Whether this is a silent segment")
 
-class VideoModel(BaseModel):
+class VideoTranscript(BaseModel):
     title: str = Field(..., description="Title of the video")
     file_path: str = Field(..., description="Path to the video file")
-    duration: float = Field(..., description="Duration of the video in seconds")
-    segments: List[SegmentModel] = Field(..., description="List of segments in the video")
+    duration: float = Field(0.0, description="Duration of the video in seconds")
+    segments: List[TranscriptSegment] = Field(..., description="List of segments in the video")
+    segment_count: Optional[int] = Field(None, description="Number of segments")
 
-class TTSRequest(BaseModel):
-    title: str = Field(
-        ...,
-        description="Title of the project.",
-        example="My Video Project"
-    )
-    description: str = Field(
-        default="",
-        description="Description of the project.",
-        example="Auto-generated video project"
-    )
-    is_public: bool = Field(
-        default=False,
-        description="Whether the project is public."
-    )
-    videos: List[VideoModel] = Field(
-        ...,
-        description="List of videos in the project with their segments."
-    )
-    job_id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()),
-        description="Unique ID for this job."
-    )
-    voice: str = Field(
-        default="default",
-        description="Voice to use for TTS. Default is the model's default voice."
-    )
-    language: str = Field(
-        default="en",
-        description="Language code for TTS. Default is 'en' for English."
-    )
-    speed: float = Field(
-        default=1.0,
-        description="Speed of speech. 1.0 is normal speed."
-    )
+class TranscriptMetadata(BaseModel):
+    video_duration: float = Field(0.0, description="Duration of the video")
+    total_segments: int = Field(0, description="Total number of segments")
+    total_segments_duration: float = Field(0.0, description="Total duration of all segments")
+    processing_timestamp: Optional[str] = Field(None, description="When the transcript was processed")
+    processing_notes: Optional[str] = Field(None, description="Notes about processing")
+    segment_stats: Optional[Dict[str, Any]] = Field(None, description="Statistics about segments")
 
-class TTSResponse(BaseModel):
-    job_id: str
-    concatenated_audio_path: str
-    message: str
+class TranscriptData(BaseModel):
+    """Model for the transcript JSON structure."""
+    title: str = Field(..., description="Title of the video project")
+    description: str = Field("", description="Description of the video project")
+    is_public: bool = Field(False, description="Whether the project is public")
+    videos: List[VideoTranscript] = Field(..., description="List of videos with their transcripts")
+    metadata: Optional[TranscriptMetadata] = Field(None, description="Metadata about the transcript")
 
-class LipSyncRequest(BaseModel):
+class LipSyncFromTranscriptRequest(BaseModel):
+    """Request model for generating lip-synced video from transcript."""
     video_path: str = Field(..., description="Path to the input video file")
-    audio_path: str = Field(..., description="Path to the audio file for lip-sync")
-    output_path: Optional[str] = Field(None, description="Path to save the output video")
-    use_wav2lip: bool = Field(True, description="Whether to use Wav2Lip for lip-syncing (if available)")
-    face_det_batch_size: int = Field(1, description="Batch size for face detection")
-    wav2lip_batch_size: int = Field(16, description="Batch size for Wav2Lip")
-    resize_factor: int = Field(1, description="Reduce the resolution by this factor")
-    crop: Optional[Tuple[int, int, int, int]] = Field(
-        None,
-        description="Crop video (top, bottom, left, right)"
-    )
-    rotate: bool = Field(False, description="Rotate video 90 degrees counter-clockwise")
-    nosmooth: bool = Field(False, description="Disable smoothing of face detections")
-    fps: float = Field(25.0, description="FPS of output video")
-    pads: Tuple[int, int, int, int] = Field(
-        (0, 10, 0, 0),
-        description="Padding (top, bottom, left, right) for face detection"
-    )
-    static: bool = Field(False, description="Use first frame for all frames (for static images)")
-    
-class LipSyncResponse(BaseModel):
+    transcript: TranscriptData = Field(..., description="Transcript data in JSON format")
+    output_path: str = Field(..., description="Path to save the output video")
+    job_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Job ID for tracking")
+
+class LipSyncFromTranscriptResponse(BaseModel):
     job_id: str
     output_path: str
     message: str
+
+@router.post("/generate-lipsync-from-transcript", response_model=LipSyncFromTranscriptResponse, tags=["lipsync"])
+async def generate_lipsync_from_transcript(request: LipSyncFromTranscriptRequest = Body(...)):
+    """
+    Generate a lip-synced video from a video and transcript data.
+    
+    This endpoint combines TTS generation and lip-syncing in one call:
+    1. Converts transcript segments to audio using TTS
+    2. Combines the audio segments
+    3. Applies lip-syncing to the video
+    
+    Returns the path to the generated video.
+    """
+    try:
+        if not request.transcript.videos or not request.transcript.videos[0].segments:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid video segments found in the transcript"
+            )
+        
+        # Create a TTS request from the transcript data
+        tts_request = TTSRequest(
+            title=request.transcript.title,
+            description=request.transcript.description,
+            is_public=request.transcript.is_public,
+            videos=[{
+                "title": request.transcript.videos[0].title,
+                "file_path": request.transcript.videos[0].file_path,
+                "duration": request.transcript.videos[0].duration,
+                "segments": [{
+                    "start_time": s.start_time,
+                    "end_time": s.end_time,
+                    "text": s.text,
+                    "is_silence": s.is_silence
+                } for s in request.transcript.videos[0].segments]
+            }],
+            job_id=request.job_id,
+            voice="default",  # Using default voice
+            language="en"     # Default to English
+        )
+        
+        # Generate TTS audio
+        tts_response = await generate_tts_audio_endpoint(tts_request)
+        
+        # Create a lip-sync request
+        lipsync_request = LipSyncRequest(
+            video_path=request.video_path,
+            audio_path=tts_response.concatenated_audio_path,
+            output_path=request.output_path,
+            job_id=request.job_id
+        )
+        
+        # Generate lip-synced video
+        return await generate_lipsync_endpoint(lipsync_request)
+        
+    except HTTPException as he:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process lip-sync from transcript: {str(e)}"
+        )
+
 
 # --- Helper Functions for TTS --- 
 def concatenate_audio_ffmpeg(segment_paths: List[str], output_path: str) -> bool:
@@ -224,7 +241,63 @@ def concatenate_audio_ffmpeg(segment_paths: List[str], output_path: str) -> bool
                 print(f"Error deleting concat list file {list_file_path}: {e_unlink}")
 
 # --- API Endpoint for TTS Generation --- 
-@router.post("/generate-tts-audio", response_model=TTSResponse, tags=["tts-poc"])
+# --- Pydantic Models for TTS --- 
+class SegmentModel(BaseModel):
+    start_time: float = Field(..., description="Start time of the segment in seconds")
+    end_time: float = Field(..., description="End time of the segment in seconds")
+    text: str = Field(default="", description="Text content of the segment")
+    duration: Optional[float] = Field(None, description="Duration of the segment in seconds")
+    is_silence: bool = Field(default=False, description="Whether this is a silent segment")
+
+class VideoModel(BaseModel):
+    title: str = Field(..., description="Title of the video")
+    file_path: str = Field(..., description="Path to the video file")
+    duration: float = Field(..., description="Duration of the video in seconds")
+    segments: List[SegmentModel] = Field(..., description="List of segments in the video")
+
+class TTSRequest(BaseModel):
+    title: str = Field(
+        ...,
+        description="Title of the project.",
+        example="My Video Project"
+    )
+    description: str = Field(
+        default="",
+        description="Description of the project.",
+        example="Auto-generated video project"
+    )
+    is_public: bool = Field(
+        default=False,
+        description="Whether the project is public."
+    )
+    videos: List[VideoModel] = Field(
+        ...,
+        description="List of videos in the project with their segments."
+    )
+    job_id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()),
+        description="Unique ID for this job."
+    )
+    voice: str = Field(
+        default="default",
+        description="Voice to use for TTS. Default is the model's default voice."
+    )
+    language: str = Field(
+        default="en",
+        description="Language code for TTS. Default is 'en' for English."
+    )
+    speed: float = Field(
+        default=1.0,
+        description="Speed of speech. 1.0 is normal speed."
+    )
+
+class TTSResponse(BaseModel):
+    job_id: str
+    concatenated_audio_path: str
+    message: str
+
+
+# @router.post("/generate-tts-audio", response_model=TTSResponse, tags=["tts-poc"])
 async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
     """
     Generates audio from text segments using Coqui TTS and concatenates them.
@@ -404,12 +477,12 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
         message=final_message
     )
 
-# Register the TTS endpoint
-router.post(
-    "/generate-tts-audio", 
-    response_model=TTSResponse, 
-    tags=["tts-poc"]
-)(generate_tts_audio_endpoint)
+# # Register the TTS endpoint
+# router.post(
+#     "/generate-tts-audio", 
+#     response_model=TTSResponse, 
+#     tags=["tts-poc"]
+# )(generate_tts_audio_endpoint)
 
 def generate_lipsync_video(
     video_path: str,
@@ -524,7 +597,30 @@ def generate_lipsync_video(
         print(f"Error in generate_lipsync_video: {str(e)}")
         raise
 
-@router.post("/generate-lipsync", response_model=LipSyncResponse, tags=["lipsync"])
+class LipSyncRequest(BaseModel):
+    video_path: str = Field(..., description="Path to the input video file")
+    audio_path: str = Field(..., description="Path to the audio file for lip-sync")
+    output_path: Optional[str] = Field(None, description="Path to save the output video")
+    use_wav2lip: bool = Field(True, description="Whether to use Wav2Lip for lip-syncing (if available)")
+    face_det_batch_size: int = Field(1, description="Batch size for face detection")
+    wav2lip_batch_size: int = Field(16, description="Batch size for Wav2Lip")
+    resize_factor: int = Field(1, description="Reduce the resolution by this factor")
+    crop: Optional[Tuple[int, int, int, int]] = Field(
+        None,
+        description="Crop video (top, bottom, left, right)"
+    )
+    rotate: bool = Field(False, description="Rotate video 90 degrees counter-clockwise")
+    nosmooth: bool = Field(False, description="Disable smoothing of face detections")
+    fps: float = Field(25.0, description="FPS of output video")
+    pads: Tuple[int, int, int, int] = Field(
+        (0, 10, 0, 0),
+        description="Padding (top, bottom, left, right) for face detection"
+    )
+    static: bool = Field(False, description="Use first frame for all frames (for static images)")
+
+LipSyncResponse = LipSyncFromTranscriptResponse
+
+# @router.post("/generate-lipsync", response_model=LipSyncResponse, tags=["lipsync"])
 async def generate_lipsync_endpoint(request: LipSyncRequest = Body(...)):
     """
     Generate a lip-synced video from a source video and audio file.
