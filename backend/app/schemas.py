@@ -1,12 +1,8 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 from enum import Enum
 
-# This file defines Pydantic models for request validation and response serialization.
-# These schemas describe the shape of data expected in API requests and returned in responses.
-# They are separate from the database models to keep a clear distinction between internal and external data representations.
-# The `Config` class with `orm_mode = True` allows compatibility with SQLAlchemy models.
 # Token schemas
 class Token(BaseModel):
     access_token: str
@@ -135,9 +131,43 @@ class HTTPError(BaseModel):
             "example": {"detail": "Error message"}
         }
 
-# Pagination
-class PaginatedResponse(BaseModel):
-    total: int
-    page: int
-    per_page: int
-    items: List[Any]
+# Video Metadata Models
+class SegmentStats(BaseModel):
+    min_duration: float
+    max_duration: float
+    avg_duration: float
+    silent_segments: int
+    spoken_segments: int
+
+class VideoMetadata(BaseModel):
+    video_duration: float
+    total_segments: int
+    total_segments_duration: float
+    processing_timestamp: datetime
+    processing_notes: str
+    segment_stats: SegmentStats
+
+class VideoSegmentSchema(BaseModel):
+    start_time: float
+    end_time: float
+    text: str
+    is_silence: bool
+
+    @field_validator('end_time')
+    def validate_times(cls, v, values):
+        if 'start_time' in values and v <= values['start_time']:
+            raise ValueError('end_time must be greater than start_time')
+        return v
+
+class VideoAssetSchema(BaseModel):
+    title: str
+    file_path: str
+    duration: float
+    segments: List[VideoSegmentSchema]
+
+class VideoProjectSchema(BaseModel):
+    title: str
+    description: Optional[str] = None
+    is_public: bool
+    metadata: VideoMetadata
+    videos: List[VideoAssetSchema]
