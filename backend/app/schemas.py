@@ -3,6 +3,10 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
 
+# This file defines Pydantic models for request validation and response serialization.
+# These schemas describe the shape of data expected in API requests and returned in responses.
+# They are separate from the database models to keep a clear distinction between internal and external data representations.
+# The `Config` class with `orm_mode = True` allows compatibility with SQLAlchemy models.
 # Token schemas
 class Token(BaseModel):
     access_token: str

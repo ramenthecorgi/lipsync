@@ -2,6 +2,9 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from .base import BaseModel, Base
 
+# This file defines the database schema using SQLAlchemy ORM.
+# Each class represents a table in the database, and each class attribute represents a column.
+# These models are used for database operations like querying, inserting, and updating records.
 class User(BaseModel, Base):
     __tablename__ = "users"
     
