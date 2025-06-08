@@ -27,7 +27,6 @@ class Project(BaseModel, Base):
     
     # Relationships
     owner = relationship("User", back_populates="projects")
-    videos = relationship("Video", back_populates="project", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Project {self.title}>"
