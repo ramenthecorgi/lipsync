@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel
 from datetime import datetime, timezone
 from enum import Enum
@@ -7,48 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.models.models import VideoTemplate as VideoTemplateModel
 from app.database import get_db
+from app.schemas import VideoProjectSchema, VideoAssetSchema
 
 router = APIRouter()
-
-# --- Pydantic Models ---
-class VideoSegment(BaseModel):
-    """Represents a single segment of the video with editable text"""
-    id: str
-    videoId: str
-    order: int
-    startTime: float
-    endTime: float
-    originalText: str
 
 class VideoAspectRatio(str, Enum):
     RATIO_16_9 = "16:9"
     RATIO_9_16 = "9:16"
     RATIO_1_1 = "1:1"
     RATIO_4_5 = "4:5"
-
-class VideoTemplate(BaseModel):
-    """Represents a video template"""
-    id: str
-    title: str
-    description: Optional[str] = None
-    thumbnailUrl: str
-    duration: float  # in seconds
-    createdAt: Optional[str] = None  # ISO date string
-    updatedAt: Optional[str] = None  # ISO date string
-    aspectRatio: Optional[VideoAspectRatio] = None
-
-class ProjectInfo(BaseModel):
-    """Additional project metadata"""
-    lastEdited: str  # ISO date string
-    version: str
-    createdBy: str
-    language: str  # e.g., 'en-US', 'es-ES'
-
-class VideoProject(BaseModel):
-    """Complete video project with all its segments and metadata"""
-    video: VideoTemplate
-    segments: List[VideoSegment]
-    projectInfo: Optional[ProjectInfo] = None
 
 # Mock data - Replace with database queries in production
 TEMPLATES: List[Dict[str, Any]] = [
@@ -112,7 +79,7 @@ def generate_segments(template_id: str, duration: float) -> List[Dict[str, Any]]
     return segments
 
 # --- API Endpoints ---
-@router.get("/", response_model=List[VideoTemplate])
+@router.get("/", response_model=List[VideoProjectSchema])
 async def list_templates():
     """
     List all available video templates.
@@ -120,45 +87,102 @@ async def list_templates():
     """
     return TEMPLATES
 
-@router.get("/{template_id}", response_model=VideoProject)
+@router.get("/{template_id}", response_model=VideoProjectSchema)
 async def get_template(
-    template_id: str,
+    template_id: Union[int, str],  # Accept both int (DB ID) and str (for backward compatibility)
     db: Session = Depends(get_db)
 ):
     """
-    Get detailed information about a specific template, including segments and speakers.
+    Get detailed information about a specific template, including segments and metadata.
     
     Args:
         template_id: The unique identifier of the template
         
     Returns:
-        VideoProject: Complete project data including video, segments, and speakers
+        VideoProject: Complete project data including video, segments, and metadata
         
     Raises:
-        HTTPException: If template is not found
+        HTTPException: If template is not found or has invalid data
     """
-    # Find the template
-    template = next((t for t in TEMPLATES if t["id"] == template_id), None)
-    if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+    # Query the database for the template
+    try:
+        # Try to convert to int if it's a string
+        template_id_int = int(template_id) if isinstance(template_id, str) else template_id
+        db_template = db.query(VideoTemplateModel).filter(VideoTemplateModel.id == template_id_int).first()
+        if not db_template:
+            raise HTTPException(status_code=404, detail="Template not found")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid template ID format")
     
-    # Generate segments for this template
-    segments = generate_segments(template_id, template["duration"])
+    # Get the transcription data if it exists
+    transcription_data = db_template.transcription_data
+    if not transcription_data:
+        raise HTTPException(status_code=400, detail="Template has no transcription data")
     
-    # Create the project info
-    now = datetime.now(timezone.utc).isoformat()
+    # Convert segments to the expected format
+    video_assets = []
+    segments = []
+    
+    # Assuming the first video asset contains our segments
+    if transcription_data.videos and len(transcription_data.videos) > 0:
+        video_asset = transcription_data.videos[0]
+        segments = [
+            {
+                "start_time": segment.start_time,
+                "end_time": segment.end_time,
+                "text": segment.text,
+                "is_silence": segment.is_silence,
+                "id": f"seg-{idx}",
+                "videoId": str(template_id),
+                "order": idx,
+                "originalText": segment.text
+            }
+            for idx, segment in enumerate(video_asset.segments, 1)
+        ]
+        
+        # Create video asset for the response
+        video_assets.append({
+            "title": video_asset.title,
+            "file_path": video_asset.file_path,
+            "duration": video_asset.duration,
+            "segments": [
+                {
+                    "start_time": s.start_time,
+                    "end_time": s.end_time,
+                    "text": s.text,
+                    "is_silence": s.is_silence
+                }
+                for s in video_asset.segments
+            ]
+        })
+    
+    # Create the response
+    video_template = {
+        "id": str(db_template.id),
+        "title": db_template.title,
+        "description": db_template.description,
+        "thumbnailUrl": "",  # Add actual thumbnail URL if available
+        "duration": transcription_data.metadata.video_duration if transcription_data.metadata else 0.0,
+        "createdAt": db_template.created_at.isoformat() if db_template.created_at else None,
+        "updatedAt": db_template.updated_at.isoformat() if db_template.updated_at else None,
+        "aspectRatio": VideoAspectRatio.RATIO_16_9.value
+    }
+    
+    # Create project info from metadata if available
     project_info = {
-        "lastEdited": now,
+        "lastEdited": datetime.now(timezone.utc).isoformat(),
         "version": "1.0.0",
         "createdBy": "system",
         "language": "en-US"
     }
     
-    # Create the full project response
-    project = {
-        "video": template,
+    return {
+        "video": video_template,
         "segments": segments,
         "projectInfo": project_info,
+        "videos": video_assets,
+        "title": transcription_data.title,
+        "description": transcription_data.description,
+        "is_public": transcription_data.is_public,
+        "metadata": transcription_data.metadata.dict() if transcription_data.metadata else {}
     }
-    
-    return project

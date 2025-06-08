@@ -142,12 +142,14 @@ class VideoSegmentSchema(BaseModel):
             raise ValueError('end_time must be greater than start_time')
         return v
 
+# this maps to video transcription details
 class VideoAssetSchema(BaseModel):
     title: str
     file_path: str
     duration: float
     segments: List[VideoSegmentSchema]
 
+# This is the top level schema for a video project, mapping to the video editing page
 class VideoProjectSchema(BaseModel):
     title: str
     description: Optional[str] = None
