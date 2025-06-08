@@ -147,17 +147,6 @@ async def get_template(template_id: str):
         "language": "en-US"
     }
     
-    # Create TTS config
-    tts_config = {
-        "provider": "coqui",
-        "language": "en-US",
-        "defaultVoice": "default",
-        "rate": 1.0,
-        "pitch": 1.0,
-        "volume": 1.0,
-        "voiceCloningEnabled": False
-    }
-    
     # Create the full project response
     project = {
         "video": template,

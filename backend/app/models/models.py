@@ -32,38 +32,13 @@ class Project(BaseModel, Base):
     def __repr__(self):
         return f"<Project {self.title}>"
 
-class Video(BaseModel, Base):
-    __tablename__ = "videos"
+class VideoTemplate(BaseModel, Base):
+    __tablename__ = "video_templates"
     
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    file_path = Column(String(512), nullable=True)
-    thumbnail_path = Column(String(512), nullable=True)
-    duration = Column(Float, default=0.0)  # in seconds
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
-    status = Column(String(50), default="uploaded")  # uploaded, processing, ready, error
-    video_metadata = Column("metadata", JSON, nullable=True)  # Additional metadata as JSON
-    
-    # Relationships
-    project = relationship("Project", back_populates="videos")
-    segments = relationship("VideoSegment", back_populates="video", cascade="all, delete-orphan")
+    video_url = Column(String(512), nullable=True)  # URL to the video file on the backend
+    transcription = Column(JSON, nullable=True)  # Flexible JSON blob for additional data
     
     def __repr__(self):
-        return f"<Video {self.title}>"
-
-class VideoSegment(BaseModel, Base):
-    __tablename__ = "video_segments"
-    
-    video_id = Column(Integer, ForeignKey("videos.id", ondelete="CASCADE"), nullable=False)
-    start_time = Column(Float, nullable=False)  # in seconds
-    end_time = Column(Float, nullable=False)  # in seconds
-    text = Column(Text, nullable=True)  # Transcript text
-    speaker = Column(String(100), nullable=True)
-    is_edited = Column(Boolean, default=False)
-    segment_metadata = Column("metadata", JSON, nullable=True)  # Additional metadata as JSON
-    
-    # Relationships
-    video = relationship("Video", back_populates="segments")
-    
-    def __repr__(self):
-        return f"<VideoSegment {self.id} ({self.start_time}s-{self.end_time}s)>"
+        return f"<VideoTemplate {self.title}>"
