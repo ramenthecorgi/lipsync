@@ -1,24 +1,3 @@
-/**
- * Types for Video Editor data models
- */
-
-/**
- * TTS Configuration for the video project
- */
-export interface TTSConfiguration {
-  provider: 'coqui' | 'default' | 'custom';
-  apiKey?: string;           // API key for TTS service
-  baseUrl?: string;          // Custom TTS API endpoint
-  defaultVoice?: string;     // Default voice ID to use
-  language?: string;         // Default language for TTS
-  rate?: number;             // Default speech rate
-  pitch?: number;            // Default pitch
-  volume?: number;           // Default volume (0-1)
-  modelName?: string;        // Default TTS model to use
-  voiceCloningEnabled?: boolean; // Whether voice cloning is enabled
-  maxCharacters?: number;    // Maximum characters per TTS request
-  concurrencyLimit?: number; // Maximum concurrent TTS requests
-}
 
 /**
  * Represents a single video template
@@ -31,8 +10,6 @@ export interface VideoTemplate {
   duration: number; // in seconds
   createdAt?: string; // ISO date string
   updatedAt?: string; // ISO date string
-  status?: 'draft' | 'published' | 'archived';
-  tags?: string[];
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5';
   resolution?: {
     width: number;
@@ -79,29 +56,7 @@ export interface VideoSegment {
   startTime: number; // in seconds
   endTime: number;   // in seconds
   originalText: string;
-  editedText?: string;
-  speakerId: string;  // Reference to Speaker
-  status?: 'pending' | 'processing' | 'processed' | 'error' | 'synthesizing' | 'synthesized';
-  // TTS-specific metadata
-  ttsMetadata?: {
-    audioUrl?: string; // URL to the generated TTS audio
-    modelUsed?: string; // Name of the TTS model used
-    voiceId?: string;   // ID of the voice used
-    speed?: number;     // Playback speed (e.g., 1.0 for normal speed)
-    pitch?: number;    // Voice pitch adjustment
-    speakerEmbedding?: number[]; // Speaker embedding for voice cloning
-    synthesisStatus?: 'pending' | 'in_progress' | 'completed' | 'failed';
-    error?: string;    // Error message if synthesis failed
-  };
-  metadata?: {
-    confidence?: number; // Speech-to-text confidence score
-    words?: Array<{
-      word: string;
-      startTime: number;
-      endTime: number;
-      confidence: number;
-    }>;
-  };
+
   // Visual styling for the segment in the UI
   style?: {
     color?: string;
@@ -123,8 +78,6 @@ export interface VideoProject {
     createdBy: string;
     language: string; // e.g., 'en-US', 'es-ES'
   };
-  // TTS configuration for the project
-  ttsConfig?: TTSConfiguration;
 }
 
 /**
