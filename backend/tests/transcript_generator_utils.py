@@ -129,26 +129,42 @@ class VideoProcessor:
         self.model = whisper.load_model(model_name, device=self.device)
     
     def extract_audio(self, video_path: str, output_path: Optional[str] = None) -> str:
-        """Extract audio from a video file.
+        """Extract audio from a video file to a temporary file.
         
         Args:
             video_path: Path to the input video file
-            output_path: Path to save the extracted audio (optional)
+            output_path: Path to save the extracted audio (optional, uses temp file if None)
             
         Returns:
-            Path to the extracted audio file
+            Path to the extracted audio file (temporary file if output_path is None)
         """
+        import tempfile
+        
         video_path = Path(video_path)
-        if output_path is None:
-            output_path = video_path.with_suffix('.wav')
+        is_temp = output_path is None
+        
+        if is_temp:
+            # Create a temporary file that will be automatically cleaned up when closed
+            temp_file = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+            output_path = temp_file.name
+            temp_file.close()
+        else:
+            output_path = str(output_path)
         
         print(f"Extracting audio from {video_path}...")
-        video = VideoFileClip(str(video_path))
-        audio = video.audio
-        audio.write_audiofile(str(output_path), logger=None)
-        video.close()
-        
-        return str(output_path)
+        try:
+            video = VideoFileClip(str(video_path))
+            audio = video.audio
+            audio.write_audiofile(output_path, logger=None, verbose=False)
+            return output_path
+        finally:
+            video.close()
+            if is_temp:
+                # The file will be deleted when the process ends
+                # or when the file object is garbage collected
+                import atexit
+                import os
+                atexit.register(lambda: os.unlink(output_path) if os.path.exists(output_path) else None)
     
     def transcribe_audio(self, audio_path: str) -> Dict:
         """Transcribe audio using Whisper.
@@ -160,13 +176,22 @@ class VideoProcessor:
             Dictionary containing the transcription result
         """
         print(f"Transcribing audio: {audio_path}")
-        result = self.model.transcribe(
-            audio_path,
-            verbose=True,
-            language="en",
-            word_timestamps=True
-        )
-        return result
+        try:
+            result = self.model.transcribe(
+                audio_path,
+                verbose=True,
+                language="en",
+                word_timestamps=True
+            )
+            return result
+        finally:
+            # Clean up the temporary audio file if it exists
+            try:
+                import os
+                if os.path.exists(audio_path):
+                    os.unlink(audio_path)
+            except Exception as e:
+                print(f"Warning: Could not delete temporary audio file: {e}")
     
     def _combine_segments(self, segments: List[Dict], target_count: int = 10) -> List[Dict]:
         """Combine segments into approximately equal-length segments.

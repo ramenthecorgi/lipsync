@@ -1,0 +1,47 @@
+{
+  "title": "chuck_5s",
+  "description": "Auto-generated from chuck_5s.mp4 with smart segment processing",
+  "is_public": false,
+  "metadata": {
+    "video_duration": 0,
+    "total_segments": 3,
+    "total_segments_duration": 6.94,
+    "processing_timestamp": "2025-06-07T21:46:55.821078",
+    "processing_notes": "Processed with SmartSegmentProcessor",
+    "segment_stats": {
+      "min_duration": 0.8800000000000001,
+      "max_duration": 4.86,
+      "avg_duration": 2.3133333333333335,
+      "silent_segments": 1,
+      "spoken_segments": 2
+    }
+  },
+  "videos": [
+    {
+      "title": "chuck_5s",
+      "file_path": "test_assets/chuck_5s.mp4",
+      "duration": 0,
+      "segments": [
+        {
+          "start_time": 0.0,
+          "end_time": 1.2,
+          "text": "I didn't do anything to Kim.",
+          "is_silence": false
+        },
+        {
+          "start_time": 1.2,
+          "end_time": 2.08,
+          "text": "",
+          "is_silence": true
+        },
+        {
+          "start_time": 2.08,
+          "end_time": 6.94,
+          "text": "I mean, I was present, yes, but management of-",
+          "is_silence": false
+        }
+      ],
+      "segment_count": 3
+    }
+  ]
+}
