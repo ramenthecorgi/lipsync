@@ -35,29 +35,6 @@ class UserInDBBase(UserBase):
 class User(UserInDBBase):
     pass
 
-# Project schemas
-class ProjectBase(BaseModel):
-    title: str
-    description: Optional[str] = None
-    is_public: bool = False
-
-class ProjectCreate(ProjectBase):
-    pass
-
-class ProjectUpdate(ProjectBase):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    is_public: Optional[bool] = None
-
-class Project(ProjectBase):
-    id: int
-    owner_id: int
-    created_at: datetime
-    updated_at: datetime
-    
-    class Config:
-        from_attributes = True
-
 # Video schemas
 class VideoStatus(str, Enum):
     UPLOADED = "uploaded"
@@ -143,9 +120,15 @@ class VideoMetadata(BaseModel):
     video_duration: float
     total_segments: int
     total_segments_duration: float
-    processing_timestamp: datetime
+    processing_timestamp: int  # UNIX timestamp in milliseconds
     processing_notes: str
     segment_stats: SegmentStats
+    
+    @field_validator('processing_timestamp')
+    def validate_timestamp(cls, v):
+        if not isinstance(v, int) or v <= 0:
+            raise ValueError('processing_timestamp must be a positive integer (UNIX timestamp in milliseconds)')
+        return v
 
 class VideoSegmentSchema(BaseModel):
     start_time: float
@@ -154,8 +137,8 @@ class VideoSegmentSchema(BaseModel):
     is_silence: bool
 
     @field_validator('end_time')
-    def validate_times(cls, v, values):
-        if 'start_time' in values and v <= values['start_time']:
+    def validate_times(cls, v: float, info):
+        if hasattr(info, 'data') and 'start_time' in info.data and v <= info.data['start_time']:
             raise ValueError('end_time must be greater than start_time')
         return v
 

@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text, Boolean, JSON
-from sqlalchemy.orm import relationship
+from typing import Dict, Any, Optional
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, Boolean, JSON
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from .base import BaseModel, Base
+from ..schemas import VideoProjectSchema
 
 class User(BaseModel, Base):
     __tablename__ = "users"
@@ -34,10 +36,29 @@ class Project(BaseModel, Base):
 class VideoTemplate(BaseModel, Base):
     __tablename__ = "video_templates"
     
-    title = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    video_url = Column(String(512), nullable=True)  # URL to the video file on the backend
-    transcription = Column(JSON, nullable=True)  # Flexible JSON blob for additional data
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    video_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # URL to the video file on the backend
+    transcription: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)  # Validated against VideoProjectSchema
     
-    def __repr__(self):
+    @property
+    def transcription_data(self) -> Optional[VideoProjectSchema]:
+        """Get the transcription data as a validated VideoProjectSchema object."""
+        if self.transcription is None:
+            return None
+        return VideoProjectSchema.model_validate(self.transcription)
+    
+    @transcription_data.setter
+    def transcription_data(self, value: Optional[VideoProjectSchema]) -> None:
+        """Set the transcription data from a VideoProjectSchema object."""
+        self.transcription = value.model_dump() if value is not None else None
+    
+    def __repr__(self) -> str:
         return f"<VideoTemplate {self.title}>"
+    
+    def update_from_schema(self, schema: VideoProjectSchema) -> None:
+        """Update the template from a VideoProjectSchema."""
+        self.title = schema.title
+        if schema.description is not None:
+            self.description = schema.description
+        self.transcription_data = schema
