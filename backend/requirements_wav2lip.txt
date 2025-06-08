@@ -6,7 +6,7 @@ torchaudio>=2.1.0,<2.2.0
 
 # Wav2Lip dependencies
 face-alignment==1.3.5
-librosa==0.10.0
+librosa==0.8.1
 numpy<1.24.0,>=1.20.0
 opencv-python-headless>=4.5.5.64,<4.9.0.0
 tqdm>=4.65.0
