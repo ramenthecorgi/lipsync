@@ -114,75 +114,71 @@ async def get_template(
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid template ID format")
     
-    # Get the transcription data if it exists
-    transcription_data = db_template.transcription_data
-    if not transcription_data:
-        raise HTTPException(status_code=400, detail="Template has no transcription data")
+    # Get the video project data
+    video_project_data = db_template.video_project_data
+    if not video_project_data:
+        raise HTTPException(status_code=400, detail="No video project data available for this template")
     
-    # Convert segments to the expected format
-    video_assets = []
+    # Extract segments and video assets from the video project data
     segments = []
+    video_assets = []
     
-    # Assuming the first video asset contains our segments
-    if transcription_data.videos and len(transcription_data.videos) > 0:
-        video_asset = transcription_data.videos[0]
-        segments = [
-            {
-                "start_time": segment.start_time,
-                "end_time": segment.end_time,
-                "text": segment.text,
-                "is_silence": segment.is_silence,
-                "id": f"seg-{idx}",
-                "videoId": str(template_id),
-                "order": idx,
-                "originalText": segment.text
-            }
-            for idx, segment in enumerate(video_asset.segments, 1)
-        ]
-        
-        # Create video asset for the response
-        video_assets.append({
-            "title": video_asset.title,
-            "file_path": video_asset.file_path,
-            "duration": video_asset.duration,
-            "segments": [
+    if video_project_data.videos:
+        for video in video_project_data.videos:
+            # Add video to assets
+            video_assets.append({
+                "title": video.title,
+                "file_path": video.file_path,
+                "duration": video.duration,
+                "segments": [
+                    {
+                        "start_time": segment.start_time,
+                        "end_time": segment.end_time,
+                        "text": segment.text,
+                        "is_silence": segment.is_silence
+                    }
+                    for segment in video.segments
+                ]
+            })
+            
+            # Add segments to the segments list
+            segments.extend([
                 {
-                    "start_time": s.start_time,
-                    "end_time": s.end_time,
-                    "text": s.text,
-                    "is_silence": s.is_silence
+                    "id": f"{video.title}_{i}",
+                    "videoId": video.title,
+                    "order": i,
+                    "startTime": segment.start_time,
+                    "endTime": segment.end_time,
+                    "originalText": segment.text
                 }
-                for s in video_asset.segments
-            ]
-        })
+                for i, segment in enumerate(video.segments)
+            ])
     
-    # Create the response
-    video_template = {
-        "id": str(db_template.id),
-        "title": db_template.title,
-        "description": db_template.description,
-        "thumbnailUrl": "",  # Add actual thumbnail URL if available
-        "duration": transcription_data.metadata.video_duration if transcription_data.metadata else 0.0,
-        "createdAt": db_template.created_at.isoformat() if db_template.created_at else None,
-        "updatedAt": db_template.updated_at.isoformat() if db_template.updated_at else None,
-        "aspectRatio": VideoAspectRatio.RATIO_16_9.value
-    }
-    
-    # Create project info from metadata if available
+    # Create project info
     project_info = {
         "lastEdited": datetime.now(timezone.utc).isoformat(),
         "version": "1.0.0",
         "createdBy": "system",
-        "language": "en-US"
+        "language": getattr(video_project_data.metadata, "language", "en-US") if video_project_data.metadata else "en-US"
     }
     
+    # Return the complete project data
     return {
-        "video": video_template,
+        "video": {
+            "id": str(db_template.id),
+            "title": db_template.title,
+            "description": db_template.description,
+            "thumbnailUrl": "",
+            "duration": video_project_data.metadata.video_duration if video_project_data.metadata else 0,
+            "createdAt": db_template.created_at.isoformat() if db_template.created_at else None,
+            "updatedAt": db_template.updated_at.isoformat() if db_template.updated_at else None,
+            "aspectRatio": None
+        },
         "segments": segments,
         "projectInfo": project_info,
         "videos": video_assets,
-        "title": transcription_data.title,
-        "description": transcription_data.description,
-        "is_public": transcription_data.is_public,
-        "metadata": transcription_data.metadata.dict() if transcription_data.metadata else {}
+        "title": video_project_data.title,
+        "description": video_project_data.description,
+        "is_public": video_project_data.is_public,
+        "metadata": video_project_data.metadata.model_dump() if video_project_data.metadata else {}
     }

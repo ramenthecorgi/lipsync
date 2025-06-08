@@ -39,19 +39,19 @@ class VideoTemplate(BaseModel, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     video_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # URL to the video file on the backend
-    transcription: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)  # Validated against VideoProjectSchema
+    video_project: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)  # Validated against VideoProjectSchema
     
     @property
-    def transcription_data(self) -> Optional[VideoProjectSchema]:
-        """Get the transcription data as a validated VideoProjectSchema object."""
-        if self.transcription is None:
+    def video_project_data(self) -> Optional[VideoProjectSchema]:
+        """Get the video project data as a validated VideoProjectSchema object."""
+        if self.video_project is None:
             return None
-        return VideoProjectSchema.model_validate(self.transcription)
+        return VideoProjectSchema.model_validate(self.video_project)
     
-    @transcription_data.setter
-    def transcription_data(self, value: Optional[VideoProjectSchema]) -> None:
-        """Set the transcription data from a VideoProjectSchema object."""
-        self.transcription = value.model_dump() if value is not None else None
+    @video_project_data.setter
+    def video_project_data(self, value: Optional[VideoProjectSchema]) -> None:
+        """Set the video project data from a VideoProjectSchema object."""
+        self.video_project = value.model_dump() if value is not None else None
     
     def __repr__(self) -> str:
         return f"<VideoTemplate {self.title}>"
