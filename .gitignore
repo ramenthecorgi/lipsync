@@ -74,7 +74,7 @@ ENV/
 *.swo
 
 # Project specific
-backend/.python-version
+# backend/.python-version
 backend/app/__pycache__/
 backend/app/models/__pycache__/
 backend/.venv/

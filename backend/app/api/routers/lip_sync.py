@@ -20,7 +20,7 @@ sys.path.insert(0, project_root)
 
 # Import Wav2Lip service
 try:
-    from app.services.wav2lip_service import Wav2LipService
+    from services.wav2lip.service import Wav2LipService
     WAV2LIP_AVAILABLE = True
 except ImportError:
     WAV2LIP_AVAILABLE = False

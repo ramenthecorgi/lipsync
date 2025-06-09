@@ -20,14 +20,25 @@ class Wav2LipService:
         
         # Set up Wav2Lip root
         self.wav2lip_root = str(wav2lip_root) if wav2lip_root else str(
-            Path(__file__).parent.parent.parent / "wav2lip_repo"
+            Path(__file__).parent.parent / "wav2lip_repo"
         )
         logger.info(f"Wav2Lip repository path: {self.wav2lip_root}")
         
         # Set up virtual environment paths
         self.venv_path = str(venv_path) if venv_path else str(
-            Path(__file__).parent.parent.parent / "wav2lip-venv"
+            Path(__file__).parent.parent / ".venv"
         )
+        
+        # Verify paths exist
+        if not Path(self.wav2lip_root).exists():
+            logger.warning(f"Wav2Lip repository not found at {self.wav2lip_root}")
+        if not Path(self.venv_path).exists():
+            logger.warning(f"Virtual environment not found at {self.venv_path}")
+            
+        # Verify Python executable exists in venv
+        python_path = Path(self.venv_path) / "bin" / "python"
+        if not python_path.exists():
+            logger.warning(f"Python executable not found in virtual environment")
         logger.info(f"Using virtual environment at: {self.venv_path}")
         
         # Determine Python executable based on platform
