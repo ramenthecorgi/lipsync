@@ -88,5 +88,5 @@ backend/output_videos/
 # backend/test_assets/.wav
 
 # wav2lip
-backend/wav2lip_repo
-backend/wav2lip-venv
+backend/services/wav2lip_repo
+backend/services/wav2lip/.venv
