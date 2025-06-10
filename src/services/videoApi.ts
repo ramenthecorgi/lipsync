@@ -77,6 +77,7 @@ export async function fetchVideoProject(templateId: string): Promise<VideoProjec
 
     return {
       video: videoTemplate,
+      videos: data.videos,
       segments,
       speakers: [defaultSpeaker],
       projectInfo: {

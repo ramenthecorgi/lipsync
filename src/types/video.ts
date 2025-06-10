@@ -70,8 +70,21 @@ export interface VideoSegment {
 /**
  * Represents the complete video project with all its segments and metadata
  */
+export interface VideoFile {
+  title: string;
+  file_path: string;
+  duration: number;
+  segments: Array<{
+    start_time: number;
+    end_time: number;
+    text: string;
+    is_silence: boolean;
+  }>;
+}
+
 export interface VideoProject {
   video: VideoTemplate;
+  videos: VideoFile[];
   segments: VideoSegment[];
   speakers: Speaker[];
   // Additional project metadata

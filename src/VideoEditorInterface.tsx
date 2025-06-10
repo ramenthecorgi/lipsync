@@ -172,26 +172,37 @@ export default function VideoEditorInterface() {
           </div>
           
           <div className="relative">
-            <div className="w-full h-80 bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl border border-slate-700/50 flex items-center justify-center overflow-hidden group">
-              {/* Animated background */}
-              <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-blue-500/10 to-emerald-500/10 animate-pulse"></div>
-              
-              <div className="relative text-center z-10">
-                <div className="text-6xl mb-4 animate-bounce">🎬</div>
-                <div className="text-white text-lg font-medium mb-2">Video frame playing in sync</div>
-                <div className="text-slate-400 text-sm mb-4">Selected: {currentSegment?.id || 'N/A'}</div>
-                
-                {/* Progress bar */}
-                <div className="w-full bg-slate-800/50 aspect-video rounded-xl shadow-lg overflow-hidden relative group">
-                  <div 
-                    className={`h-full bg-gradient-to-r ${currentSegment?.style?.gradient || 'from-gray-500 to-gray-600'} rounded-full transition-all duration-300`}
-                    style={{ width: `${(currentTime / (project?.video.duration || 1)) * 100}%` }}
-                  ></div>
+            <div className="w-full bg-black rounded-xl border border-slate-700/50 overflow-hidden group aspect-video">
+              {project?.videos?.[0]?.file_path ? (
+                <video
+                  src={`http://localhost:8000${project.videos[0].file_path}`}
+                  className="w-full h-full object-contain"
+                  controls
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
+                  <div className="text-center">
+                    <div className="text-6xl mb-4">🎬</div>
+                    <div className="text-white text-lg font-medium mb-2">No video available</div>
+                    <div className="text-slate-400 text-sm">Video file not found</div>
+                  </div>
                 </div>
-                <div className="text-slate-300 text-xs mt-2">
-                  {currentTime.toFixed(1)}s / {(project?.video.duration || 0).toFixed(1)}s
-                </div>
-              </div>
+              )}
+            </div>
+            
+            {/* Progress bar */}
+            <div className="mt-4 w-full bg-slate-800/50 h-2 rounded-full overflow-hidden">
+              <div 
+                className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transition-all duration-300`}
+                style={{ width: `${(currentTime / (project?.video.duration || 1)) * 100}%` }}
+              ></div>
+            </div>
+            <div className="flex justify-between mt-2 text-slate-400 text-sm">
+              <span>{currentTime.toFixed(1)}s</span>
+              <span>{(project?.video.duration || 0).toFixed(1)}s</span>
             </div>
           </div>
         </div>
