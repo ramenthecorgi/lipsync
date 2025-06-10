@@ -48,7 +48,6 @@ export default function VideoEditorInterface() {
     loadProject();
   }, [videoIdFromUrl]);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
 
   // Derived states from project
   const currentSegment = project?.segments.find((s: VideoSegment) => s.id === selectedSegmentId);
@@ -72,22 +71,39 @@ export default function VideoEditorInterface() {
   }, [selectedSegmentId, project]); // Re-run if selectedSegmentId or the whole project changes
 
   const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
+    if (!project?.videos?.[0]?.file_path) return;
+    const videoElement = document.querySelector('video');
+    if (videoElement) {
+      if (isPlaying) {
+        videoElement.pause();
+      } else {
+        videoElement.play();
+      }
+    }
   };
 
   const handleRewind = () => {
-    setCurrentTime(Math.max(0, currentTime - 5));
+    const videoElement = document.querySelector('video');
+    if (videoElement) {
+      videoElement.currentTime = Math.max(0, videoElement.currentTime - 5);
+    }
   };
 
   const handleFastForward = () => {
-    setCurrentTime(currentTime + 5);
+    const videoElement = document.querySelector('video');
+    if (videoElement) {
+      videoElement.currentTime = Math.min(videoElement.duration, videoElement.currentTime + 5);
+    }
   };
 
   const handleSegmentClick = (segmentId: string) => {
     setSelectedSegmentId(segmentId);
     const segment = project?.segments.find((s: VideoSegment) => s.id === segmentId);
     if (segment) {
-      setCurrentTime(segment.startTime); // Sync player time to segment start
+      const videoElement = document.querySelector('video');
+      if (videoElement) {
+        videoElement.currentTime = segment.startTime; // Sync player time to segment start
+      }
     }
   };
 
@@ -131,44 +147,18 @@ export default function VideoEditorInterface() {
               <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-orange-500 rounded-xl flex items-center justify-center shadow-lg">
                 <span className="text-white text-lg">📼</span>
               </div>
-              <div className="flex items-center gap-4">
-                <div>
-                  <h2 className="text-xl font-semibold text-white">Video Preview</h2>
-                  <p className="text-slate-400 text-sm">Interactive timeline playback</p>
-                </div>
-                <button
-                  onClick={() => navigate('/templates')}
-                  className="group flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600/80 text-slate-300 hover:text-white rounded-lg transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium"
-                >
-                  <LayoutGrid size={16} />
-                  Change Template
-                </button>
+              <div>
+                <h2 className="text-xl font-semibold text-white">Video Preview</h2>
+                <p className="text-slate-400 text-sm">Interactive timeline playback</p>
               </div>
             </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={handlePlayPause}
-                className="group flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-blue-500/25 hover:-translate-y-0.5"
-              >
-                {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-                <span className="font-medium">{isPlaying ? 'Pause' : 'Play'}</span>
-              </button>
-              <button
-                onClick={handleRewind}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-700/80 text-slate-200 rounded-xl hover:bg-slate-600/80 transition-all duration-200 hover:-translate-y-0.5"
-              >
-                <RotateCcw size={18} />
-                <span className="font-medium">-5s</span>
-              </button>
-              <button
-                onClick={handleFastForward}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-700/80 text-slate-200 rounded-xl hover:bg-slate-600/80 transition-all duration-200 hover:-translate-y-0.5"
-              >
-                <RotateCw size={18} />
-                <span className="font-medium">+5s</span>
-              </button>
-            </div>
+            <button
+              onClick={() => navigate('/templates')}
+              className="group flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600/80 text-slate-300 hover:text-white rounded-lg transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+            >
+              <LayoutGrid size={16} />
+              Change Template
+            </button>
           </div>
           
           <div className="relative">
@@ -180,7 +170,6 @@ export default function VideoEditorInterface() {
                   controls
                   onPlay={() => setIsPlaying(true)}
                   onPause={() => setIsPlaying(false)}
-                  onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
@@ -193,17 +182,7 @@ export default function VideoEditorInterface() {
               )}
             </div>
             
-            {/* Progress bar */}
-            <div className="mt-4 w-full bg-slate-800/50 h-2 rounded-full overflow-hidden">
-              <div 
-                className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transition-all duration-300`}
-                style={{ width: `${(currentTime / (project?.video.duration || 1)) * 100}%` }}
-              ></div>
-            </div>
-            <div className="flex justify-between mt-2 text-slate-400 text-sm">
-              <span>{currentTime.toFixed(1)}s</span>
-              <span>{(project?.video.duration || 0).toFixed(1)}s</span>
-            </div>
+
           </div>
         </div>
 
