@@ -56,6 +56,9 @@ export interface VideoSegment {
   startTime: number; // in seconds
   endTime: number;   // in seconds
   originalText: string;
+  editedText?: string;  // User-edited version of the text
+  speakerId?: string;  // ID of the speaker for this segment
+  status?: 'pending' | 'processed' | 'error'; // Processing status of the segment
 
   // Visual styling for the segment in the UI
   style?: {

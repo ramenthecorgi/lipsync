@@ -1,19 +1,92 @@
-import { VideoProject, VideoTemplate } from '../types/video';
+import { VideoProject, VideoTemplate, VideoSegment, Speaker } from '../types/video';
 
-const API_BASE_URL = '/api/v1'; // Update this with your actual API base URL
+const API_BASE_URL = 'http://localhost:8000/api/v1'; // Backend API base URL
+
+interface ApiVideoProject {
+  title: string;
+  description: string;
+  is_public: boolean;
+  metadata: {
+    video_duration: number;
+    total_segments: number;
+    total_segments_duration: number;
+    processing_timestamp: number;
+    processing_notes: string;
+    segment_stats: {
+      min_duration: number;
+      max_duration: number;
+      avg_duration: number;
+      silent_segments: number;
+      spoken_segments: number;
+    };
+  };
+  videos: Array<{
+    title: string;
+    file_path: string;
+    duration: number;
+    segments: Array<{
+      start_time: number;
+      end_time: number;
+      text: string;
+      is_silence: boolean;
+    }>;
+  }>;
+}
 
 /**
- * Fetches a video project by ID from the backend
+ * Fetches a video template by ID from the backend and transforms it to match the VideoProject type
  */
-export async function fetchVideoProject(projectId: string): Promise<VideoProject> {
+export async function fetchVideoProject(templateId: string): Promise<VideoProject> {
   try {
-    const response = await fetch(`${API_BASE_URL}/projects/${projectId}`);
+    const response = await fetch(`${API_BASE_URL}/templates/${templateId}`);
     if (!response.ok) {
-      throw new Error(`Failed to fetch project: ${response.statusText}`);
+      throw new Error(`Failed to fetch template: ${response.statusText}`);
     }
-    return await response.json();
+    
+    const data: ApiVideoProject = await response.json();
+    const video = data.videos[0]; // Take the first video
+    
+    // Transform the API response to match VideoProject type
+    const videoTemplate: VideoTemplate = {
+      id: templateId,
+      title: data.title,
+      description: data.description,
+      thumbnailUrl: '/placeholder-thumbnail.jpg', // Default thumbnail
+      duration: data.metadata.video_duration,
+      aspectRatio: '16:9', // Default aspect ratio
+    };
+
+    const segments: VideoSegment[] = video.segments.map((segment, index) => ({
+      id: `segment_${index + 1}`,
+      videoId: templateId,
+      order: index + 1,
+      startTime: segment.start_time,
+      endTime: segment.end_time,
+      originalText: segment.text,
+      editedText: segment.text,
+      status: 'processed',
+    }));
+
+    const defaultSpeaker: Speaker = {
+      id: 'speaker_1',
+      name: 'Default Speaker',
+      role: 'Narrator',
+      avatarUrl: '/default-avatar.png',
+    };
+
+    return {
+      video: videoTemplate,
+      segments,
+      speakers: [defaultSpeaker],
+      projectInfo: {
+        lastEdited: new Date().toISOString(),
+        version: '1.0.0',
+        createdBy: 'System',
+        language: 'en-US',
+      },
+    };
   } catch (error) {
-    console.error('Error fetching video project:', error);
+    console.error('Error fetching video template:', error);
     throw error;
   }
 }
@@ -27,7 +100,8 @@ export async function fetchVideoTemplates(): Promise<VideoTemplate[]> {
     if (!response.ok) {
       throw new Error(`Failed to fetch templates: ${response.statusText}`);
     }
-    return await response.json();
+    const data = await response.json();
+    return data;
   } catch (error) {
     console.error('Error fetching video templates:', error);
     throw error;

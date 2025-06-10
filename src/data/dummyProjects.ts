@@ -141,7 +141,7 @@ export const createDummyProject = (templateId: string): VideoProject | null => {
 export const dummyProjects: Record<string, VideoProject> = {};
 
 // Only create projects for templates that exist
-const templateIds = ['template_1', 'template_2', 'template_3', 'template_4', 'template_5', 'template_6'];
+const templateIds = ['1', '2', '3', '4', '5', '6'];
 
 // Create projects and filter out any null values
 const projectEntries = templateIds
