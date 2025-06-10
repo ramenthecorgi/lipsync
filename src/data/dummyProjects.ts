@@ -35,6 +35,12 @@ export const dummySpeakers: Speaker[] = [
 
 // Helper function to create segments for a project
 const createSegments = (templateId: string, speakers: Speaker[]): VideoSegment[] => {
+  // Return empty array if no speakers are provided
+  if (speakers.length === 0) {
+    console.error('No speakers provided for segments');
+    return [];
+  }
+
   const baseSegments = [
     {
       id: `${templateId}_seg1`,
@@ -43,7 +49,7 @@ const createSegments = (templateId: string, speakers: Speaker[]): VideoSegment[]
       startTime: 0.0,
       endTime: 5.2,
       originalText: 'Welcome to our video presentation. Today, we have something special for you.',
-      speakerId: speakers[0].id,
+      speakerId: speakers[0 % speakers.length].id, // Use modulo to ensure we don't go out of bounds
       status: 'processed' as const,
       style: {
         gradient: 'from-purple-500 to-pink-500'
@@ -56,7 +62,7 @@ const createSegments = (templateId: string, speakers: Speaker[]): VideoSegment[]
       startTime: 5.2,
       endTime: 12.5,
       originalText: 'In this segment, we will explore the main features and benefits of our product.',
-      speakerId: speakers[1].id,
+      speakerId: speakers[1 % speakers.length].id,
       status: 'processed' as const,
       style: {
         gradient: 'from-blue-500 to-cyan-500'
@@ -69,7 +75,7 @@ const createSegments = (templateId: string, speakers: Speaker[]): VideoSegment[]
       startTime: 12.5,
       endTime: 22.0,
       originalText: 'Let me show you how easy it is to get started with just a few simple steps.',
-      speakerId: speakers[2].id,
+      speakerId: speakers[2 % speakers.length].id,
       status: 'processed' as const,
       style: {
         gradient: 'from-green-500 to-teal-500'
@@ -82,7 +88,7 @@ const createSegments = (templateId: string, speakers: Speaker[]): VideoSegment[]
       startTime: 22.0,
       endTime: 30.0,
       originalText: 'Thank you for watching. We hope you found this presentation helpful and informative.',
-      speakerId: speakers[3].id,
+      speakerId: speakers[3 % speakers.length].id,
       status: 'processed' as const,
       style: {
         gradient: 'from-amber-500 to-orange-500'
@@ -96,7 +102,10 @@ const createSegments = (templateId: string, speakers: Speaker[]): VideoSegment[]
 // Create a project from a template ID
 export const createDummyProject = (templateId: string): VideoProject | null => {
   const template = getTemplateById(templateId);
-  if (!template) return null;
+  if (!template) {
+    console.error(`Template with ID ${templateId} not found`);
+    return null;
+  }
 
   // Select 2-4 random speakers for this project
   const shuffledSpeakers = [...dummySpeakers].sort(() => 0.5 - Math.random());
@@ -104,6 +113,12 @@ export const createDummyProject = (templateId: string): VideoProject | null => {
   
   // Create segments for this project
   const segments = createSegments(templateId, projectSpeakers);
+  
+  // If no segments were created, return null
+  if (segments.length === 0) {
+    console.error('Failed to create segments for project');
+    return null;
+  }
 
   return {
     video: {
@@ -123,14 +138,21 @@ export const createDummyProject = (templateId: string): VideoProject | null => {
 };
 
 // Generate a few dummy projects for testing
-export const dummyProjects: Record<string, VideoProject> = {
-  'project_1': createDummyProject('template_1')!,
-  'project_2': createDummyProject('template_2')!,
-  'project_3': createDummyProject('template_3')!,
-  'project_4': createDummyProject('template_4')!,
-  'project_5': createDummyProject('template_5')!,
-  'project_6': createDummyProject('template_6')!
-};
+export const dummyProjects: Record<string, VideoProject> = {};
+
+// Only create projects for templates that exist
+const templateIds = ['template_1', 'template_2', 'template_3', 'template_4', 'template_5', 'template_6'];
+
+// Create projects and filter out any null values
+const projectEntries = templateIds
+  .map((templateId, index) => {
+    const project = createDummyProject(templateId);
+    return project ? [`project_${index + 1}`, project] : null;
+  })
+  .filter((entry): entry is [string, VideoProject] => entry !== null);
+
+// Convert the entries to an object
+Object.assign(dummyProjects, Object.fromEntries(projectEntries));
 
 // Helper function to get a project by ID
 export const getDummyProject = (projectId: string): VideoProject | null => {

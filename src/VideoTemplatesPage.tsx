@@ -2,16 +2,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PlayCircle, Edit } from 'lucide-react';
 
-// Updated dummy video data with descriptions and better thumbnail placeholders
-const dummyVideoTemplates = [
-  { id: 'vid1', title: 'Summer Vacation Highlights', thumbnailUrl: 'https://source.unsplash.com/random/480x270?summer,vacation', duration: 125, description: 'A vibrant and energetic template perfect for showcasing your summer travel adventures. Bright colors and fast cuts.' },
-  { id: 'vid2', title: 'Cooking Masterclass: Pasta', thumbnailUrl: 'https://source.unsplash.com/random/480x270?cooking,pasta', duration: 320, description: 'An elegant and informative template for cooking tutorials. Clean layout with space for ingredient lists and instructions.' },
-  { id: 'vid3', title: 'Tech Review: New Gadgets', thumbnailUrl: 'https://source.unsplash.com/random/480x270?tech,gadget', duration: 180, description: 'A sleek and modern template for tech reviews. Dynamic animations and futuristic design elements.' },
-  { id: 'vid4', title: 'Fitness Challenge Day 10', thumbnailUrl: 'https://source.unsplash.com/random/480x270?fitness,gym', duration: 240, description: 'A motivational and high-energy template for fitness content. Bold typography and inspiring visuals.' },
-  { id: 'vid5', title: 'Corporate Presentation', thumbnailUrl: 'https://source.unsplash.com/random/480x270?business,presentation', duration: 280, description: 'A professional and clean template for corporate presentations. Minimalist design with clear data visualization options.' },
-  { id: 'vid6', title: 'Wedding Memories', thumbnailUrl: 'https://source.unsplash.com/random/480x270?wedding,love', duration: 450, description: 'A romantic and elegant template to cherish your wedding memories. Soft tones and beautiful transitions.' },
-];
+// Import the actual templates from dummyTemplates
+import { dummyTemplates } from './data/dummyTemplates';
 
+// Define the VideoTemplate interface
 interface VideoTemplate {
   id: string;
   title: string;
@@ -20,8 +14,17 @@ interface VideoTemplate {
   description: string;
 }
 
+// Use the actual templates from dummyTemplates with proper typing
+const dummyVideoTemplates: VideoTemplate[] = dummyTemplates.map(template => ({
+  id: template.id,
+  title: template.title,
+  thumbnailUrl: template.thumbnailUrl,
+  duration: template.duration,
+  description: template.description || 'No description available' // Provide a default value for description
+}));
+
 export default function VideoTemplatesPage() {
-  const [templates, setTemplates] = useState<VideoTemplate[]>(dummyVideoTemplates);
+  const [templates] = useState<VideoTemplate[]>(dummyVideoTemplates);
   const navigate = useNavigate();
 
   const handleSelectTemplate = (templateId: string) => {
