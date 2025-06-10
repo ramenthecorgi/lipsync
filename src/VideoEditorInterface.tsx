@@ -1,7 +1,7 @@
 // Paste your TSX component code here
 
 import { useState, useEffect } from 'react';
-import { Play, Pause, RotateCcw, RotateCw, Edit3, Save, AlertTriangle, Sparkles, LayoutGrid, Film, Loader2 } from 'lucide-react'; // Removed Volume2, Eye
+import { Edit3, AlertTriangle, Sparkles, LayoutGrid, Film, Loader2 } from 'lucide-react'; // Removed Volume2, Eye
 import { useParams, useNavigate } from 'react-router-dom';
 import { VideoProject, VideoSegment } from './types/video';
 import { fetchVideoProject } from './services/videoApi';
@@ -47,7 +47,6 @@ export default function VideoEditorInterface() {
 
     loadProject();
   }, [videoIdFromUrl]);
-  const [isPlaying, setIsPlaying] = useState(false);
 
   // Derived states from project
   const currentSegment = project?.segments.find((s: VideoSegment) => s.id === selectedSegmentId);
@@ -70,32 +69,6 @@ export default function VideoEditorInterface() {
     }
   }, [selectedSegmentId, project]); // Re-run if selectedSegmentId or the whole project changes
 
-  const handlePlayPause = () => {
-    if (!project?.videos?.[0]?.file_path) return;
-    const videoElement = document.querySelector('video');
-    if (videoElement) {
-      if (isPlaying) {
-        videoElement.pause();
-      } else {
-        videoElement.play();
-      }
-    }
-  };
-
-  const handleRewind = () => {
-    const videoElement = document.querySelector('video');
-    if (videoElement) {
-      videoElement.currentTime = Math.max(0, videoElement.currentTime - 5);
-    }
-  };
-
-  const handleFastForward = () => {
-    const videoElement = document.querySelector('video');
-    if (videoElement) {
-      videoElement.currentTime = Math.min(videoElement.duration, videoElement.currentTime + 5);
-    }
-  };
-
   const handleSegmentClick = (segmentId: string) => {
     setSelectedSegmentId(segmentId);
     const segment = project?.segments.find((s: VideoSegment) => s.id === segmentId);
@@ -107,9 +80,28 @@ export default function VideoEditorInterface() {
     }
   };
 
-  const handleGenerateVoice = () => {
-    setIsGenerating(true);
-    setTimeout(() => setIsGenerating(false), 3000);
+  const handleGenerateVoice = async () => {
+    if (!videoIdFromUrl || !project) return;
+    
+    try {
+      setIsGenerating(true);
+      
+      // In a real app, you would save the project here before navigating
+      // const updatedSegments = project.segments.map(segment => 
+      //   segment.id === selectedSegmentId 
+      //     ? { ...segment, editedText: editText }
+      //     : segment
+      // );
+      // await saveProject({ ...project, segments: updatedSegments });
+      
+      // Navigate to the generation page
+      navigate(`/generate/${videoIdFromUrl}`);
+    } catch (err) {
+      console.error('Error preparing for generation:', err);
+      setError('Failed to prepare for generation. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -168,8 +160,6 @@ export default function VideoEditorInterface() {
                   src={`http://localhost:8000${project.videos[0].file_path}`}
                   className="w-full h-full object-contain"
                   controls
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
@@ -329,17 +319,6 @@ export default function VideoEditorInterface() {
                   <span>Generate Voice & Sync</span>
                 </>
               )}
-            </button>
-            
-            <button 
-              className={`flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-200 font-medium ${exceedsLimit || !currentSegment 
-                  ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-600/30' 
-                  : 'bg-gradient-to-r from-slate-600 to-slate-700 text-white hover:from-slate-500 hover:to-slate-600 shadow-lg hover:shadow-slate-500/25 hover:-translate-y-0.5'
-              }`}
-              disabled={exceedsLimit || !currentSegment}
-            >
-              <Save size={18} />
-              <span>Save Segment Changes</span>
             </button>
           </div>
 
