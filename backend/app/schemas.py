@@ -124,8 +124,17 @@ class VideoMetadata(BaseModel):
     processing_notes: str
     segment_stats: SegmentStats
     
-    @field_validator('processing_timestamp')
+    @field_validator('processing_timestamp', mode='before')
     def validate_timestamp(cls, v):
+        if isinstance(v, str):
+            try:
+                from datetime import datetime
+                # Parse ISO 8601 string to datetime and convert to timestamp in milliseconds
+                dt = datetime.fromisoformat(v.rstrip('Z'))
+                return int(dt.timestamp() * 1000)
+            except (ValueError, TypeError) as e:
+                raise ValueError(f'Invalid timestamp format: {v}. Must be ISO 8601 string or UNIX timestamp in milliseconds')
+        
         if not isinstance(v, int) or v <= 0:
             raise ValueError('processing_timestamp must be a positive integer (UNIX timestamp in milliseconds)')
         return v
