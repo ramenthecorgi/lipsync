@@ -128,11 +128,6 @@ export default function VideoEditorInterface() {
         </div>
 
         {/* Video Preview Section */}
-        {project?.video && (
-          <div className="mb-2 text-slate-400">
-            Currently editing: <span className="font-semibold text-purple-400">{project.video.title}</span>
-          </div>
-        )}
         <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 mb-8 shadow-2xl">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
