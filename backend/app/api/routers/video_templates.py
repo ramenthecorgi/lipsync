@@ -123,12 +123,16 @@ async def get_template(
     segments = []
     video_assets = []
     
+    # Generate video URL - assuming videos are stored in static/videos with .mp4 extension
+    video_url = f"/static/videos/{template_id}.mp4"
+    
     if video_project_data.videos:
         for video in video_project_data.videos:
             # Add video to assets
             video_assets.append({
                 "title": video.title,
-                "file_path": video.file_path,
+                # "file_path": video.file_path,
+                "file_path": video_url,
                 "duration": video.duration,
                 "segments": [
                     {
@@ -161,6 +165,7 @@ async def get_template(
         "createdBy": "system",
         "language": getattr(video_project_data.metadata, "language", "en-US") if video_project_data.metadata else "en-US"
     }
+    
     
     # Return the complete project data
     return {
