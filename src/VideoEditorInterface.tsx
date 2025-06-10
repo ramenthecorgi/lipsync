@@ -1,10 +1,10 @@
 // Paste your TSX component code here
 
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Play, Pause, RotateCcw, RotateCw, Edit3, Save, AlertTriangle, Sparkles, LayoutGrid, Film, Loader2 } from 'lucide-react'; // Removed Volume2, Eye
 import { useParams, useNavigate } from 'react-router-dom';
-import { VideoProject, VideoSegment, Speaker } from './types/video'; // Corrected import path for types
-import { getDummyProject, dummyTemplates } from './data'; // Corrected import path for data
+import { VideoProject, VideoSegment } from './types/video';
+import { fetchVideoProject } from './services/videoApi';
 
 export default function VideoEditorInterface() {
   const { videoId: videoIdFromUrl } = useParams<{ videoId: string }>();
@@ -17,28 +17,32 @@ export default function VideoEditorInterface() {
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null); // Keep for potential future video element integration
 
   useEffect(() => {
-    const loadProject = () => {
+    const loadProject = async () => {
+      if (!videoIdFromUrl) {
+        setError('No video ID provided');
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
-      // Use videoIdFromUrl if available, otherwise a default project ID (e.g., from the first dummy template)
-      const projectIdToLoad = videoIdFromUrl || dummyTemplates[0]?.id || 'template_1'; 
-      
-      // In a real app, this would be an API call: fetchVideoProject(projectIdToLoad)
-      const loadedProject = getDummyProject(projectIdToLoad.replace('template_', 'project_')); // Adjust if your project IDs differ from template IDs
-      
-      if (loadedProject) {
+
+      try {
+        const loadedProject = await fetchVideoProject(videoIdFromUrl);
         setProject(loadedProject);
         if (loadedProject.segments && loadedProject.segments.length > 0) {
           setSelectedSegmentId(loadedProject.segments[0].id);
-          setEditText(loadedProject.segments[0].originalText);
+          setEditText(loadedProject.segments[0].editedText || loadedProject.segments[0].originalText);
         }
-      } else {
-        setError(`Project with ID ${projectIdToLoad} not found.`);
+      } catch (err: unknown) {
+        console.error('Error loading project:', err);
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        setError(`Failed to load project: ${errorMessage}`);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     loadProject();
@@ -48,11 +52,10 @@ export default function VideoEditorInterface() {
 
   // Derived states from project
   const currentSegment = project?.segments.find((s: VideoSegment) => s.id === selectedSegmentId);
-  const currentSpeaker = project?.speakers.find((spk: Speaker) => spk.id === currentSegment?.speakerId);
   const segmentDuration = currentSegment ? currentSegment.endTime - currentSegment.startTime : 0;
 
-  const estimateTextDuration = (text) => {
-    const words = text.trim().split(/\s+/).filter(word => word.length > 0);
+  const estimateTextDuration = (text: string): number => {
+    const words = text.trim().split(/\s+/).filter((word: string) => word.length > 0);
     const wordsPerSecond = 150 / 60;
     return words.length / wordsPerSecond;
   };
@@ -222,10 +225,7 @@ export default function VideoEditorInterface() {
                   }`}>
                     {segment.startTime.toFixed(1)}s–{segment.endTime.toFixed(1)}s
                   </div>
-                  <div className={`text-xs mt-1 transition-colors duration-300 ${selectedSegmentId === segment.id ? 'text-slate-400' : 'text-slate-600'
-                  }`}>
-                    {project.speakers.find((spk: Speaker) => spk.id === segment.speakerId)?.name || 'Unknown Speaker'}
-                  </div>
+
                 </div>
               </button>
             ))}
@@ -233,7 +233,7 @@ export default function VideoEditorInterface() {
         </div>
 
         {/* Editable Segment */}
-        {currentSegment && currentSpeaker && (
+        {currentSegment && (
         <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 shadow-2xl">
           <div className="flex items-center gap-3 mb-6">
             <div className={`w-3 h-6 bg-gradient-to-b ${currentSegment.style?.gradient || 'from-gray-500 to-gray-600'} rounded-full`}></div>
@@ -247,16 +247,6 @@ export default function VideoEditorInterface() {
             {/* Left Column - Info & Original */}
             <div className="space-y-6">
               <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700/30">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center">
-                    <img src={currentSpeaker.avatarUrl || `https://via.placeholder.com/32/${currentSpeaker.id.slice(-6)}/FFFFFF?text=${currentSpeaker.name[0]}`} alt={currentSpeaker.name} className="w-full h-full rounded-lg object-cover" />
-                  </div>
-                  <div>
-                    <div className="text-white font-medium">{currentSpeaker.name}</div>
-                    <div className="text-slate-400 text-sm">{currentSpeaker.role || 'Speaker'}</div>
-                  </div>
-                </div>
-                
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
                     <span className="text-white text-sm">📍</span>

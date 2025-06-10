@@ -65,6 +65,7 @@ export async function fetchVideoProject(templateId: string): Promise<VideoProjec
       originalText: segment.text,
       editedText: segment.text,
       status: 'processed',
+      speakerId: 'speaker_1', // Assign default speaker ID to match the speaker we create below
     }));
 
     const defaultSpeaker: Speaker = {
