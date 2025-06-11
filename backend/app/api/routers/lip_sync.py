@@ -154,10 +154,14 @@ async def generate_lipsync_from_transcript(
     
     if test_mode:
         print(f"[TEST MODE] Bypassing processing for job: {request.job_id}")
+        print("[TEST MODE] Simulating 5-second processing delay...")
+        import time
+        time.sleep(5)  # Add 5-second delay
+        print("[TEST MODE] Delay complete, returning mock response")
         return {
             "job_id": request.job_id or f"test_job_{uuid.uuid4().hex[:8]}",
             "output_path": request.video_path,
-            "message": "Test mode: Processing bypassed"
+            "message": "Test mode: Processing bypassed with 5s delay"
         }
     # try:
     #     if not request.transcript.videos or not request.transcript.videos[0].segments:
