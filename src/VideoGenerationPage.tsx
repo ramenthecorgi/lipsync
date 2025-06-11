@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Loader2, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
 import { startVideoGeneration, TranscriptData } from './services/videoGenerationApi';
+
+interface LocationState {
+  videoUrl: string;
+  transcript: TranscriptData;
+}
 
 interface VideoGenerationState {
   isLoading: boolean;
@@ -11,66 +16,47 @@ interface VideoGenerationState {
 
 export default function VideoGenerationPage() {
   const { videoId = '' } = useParams<{ videoId: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
+  
+  // Get video URL and transcript from route state
+  const { videoUrl, transcript } = (location.state as LocationState) || {};
   
   const [state, setState] = useState<VideoGenerationState>({
     isLoading: false,
     error: null,
     generatedVideoUrl: null
   });
-  
-  const [transcript, setTranscript] = useState<TranscriptData | null>(null);
 
-  // Fetch transcript when component mounts
+  // Start generation when component mounts
   useEffect(() => {
-    const fetchTranscript = async () => {
-      if (!videoId) return;
-      
-      try {
-        // In a real app, you would fetch the transcript from your API
-        // For now, we'll use a mock transcript
-        const mockTranscript: TranscriptData = {
-          title: `Video ${videoId}`,
-          description: 'Generated video',
-          is_public: false,
-          videos: [
-            {
-              title: `Video ${videoId}`,
-              file_path: `videos/${videoId}/source.mp4`,
-              duration: 60,
-              segments: [
-                {
-                  start_time: 0,
-                  end_time: 5,
-                  text: 'This is a test segment',
-                  is_silence: false
-                }
-              ]
-            }
-          ]
-        };
-        
-        setTranscript(mockTranscript);
-      } catch (err) {
-        setState(prev => ({ ...prev, error: 'Failed to load transcript' }));
-        console.error('Error fetching transcript:', err);
-      }
-    };
+    if (!videoUrl || !transcript) {
+      setState(prev => ({ ...prev, error: 'Missing video URL or transcript' }));
+      return;
+    }
     
-    fetchTranscript();
-  }, [videoId]);
+    startGeneration();
+  }, [videoUrl, transcript]);
+  
+  // Handle back navigation
+  const handleBack = () => {
+    navigate(-1);
+  };
 
   const startGeneration = async () => {
-    if (!videoId || !transcript) return;
+    if (!videoId || !transcript || !videoUrl) {
+      setState(prev => ({ ...prev, error: 'Missing required parameters for video generation' }));
+      return;
+    }
     
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       
       // Start the video generation process
       const response = await startVideoGeneration({
-        videoPath: `videos/${videoId}/source.mp4`,
+        videoPath: videoUrl,
         transcript,
-        outputPath: `videos/${videoId}/output.mp4`,
+        outputPath: `videos/${videoId}/output_${Date.now()}.mp4`,
         testMode: true
       });
       
@@ -79,9 +65,10 @@ export default function VideoGenerationPage() {
         throw new Error(response.error);
       }
       
+      // TODO: need to change the localhost to proper url
       setState(prev => ({
         ...prev,
-        generatedVideoUrl: response.output_path,
+        generatedVideoUrl: `http://localhost:8000${response.output_path}`,
         isLoading: false
       }));
       
@@ -102,9 +89,7 @@ export default function VideoGenerationPage() {
     }
   }, [transcript]);
 
-  const handleBack = () => {
-    navigate(-1); // Go back to the editor
-  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100 p-6">

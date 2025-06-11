@@ -86,16 +86,33 @@ export default function VideoEditorInterface() {
     try {
       setIsGenerating(true);
       
-      // In a real app, you would save the project here before navigating
-      // const updatedSegments = project.segments.map(segment => 
-      //   segment.id === selectedSegmentId 
-      //     ? { ...segment, editedText: editText }
-      //     : segment
-      // );
-      // await saveProject({ ...project, segments: updatedSegments });
+      // Get the video URL from the first video in the project
+      const videoUrl = project.videos[0]?.file_path || '';
       
-      // Navigate to the generation page
-      navigate(`/generate/${videoIdFromUrl}`);
+      // Prepare transcript data in the format expected by the generation page
+      const transcript = {
+        title: project.video.title,
+        description: project.video.description || '',
+        is_public: false,
+        videos: [
+          {
+            title: project.video.title,
+            file_path: videoUrl,
+            duration: project.video.duration,
+            segments: project.segments.map(segment => ({
+              start_time: segment.startTime,
+              end_time: segment.endTime,
+              text: segment.editedText || segment.originalText,
+              is_silence: false // This would come from your segment data if available
+            }))
+          }
+        ]
+      };
+      
+      // Navigate to the generation page with video URL and transcript as state
+      navigate(`/generate/${videoIdFromUrl}`, { 
+        state: { videoUrl, transcript } 
+      });
     } catch (err) {
       console.error('Error preparing for generation:', err);
       setError('Failed to prepare for generation. Please try again.');
@@ -152,6 +169,7 @@ export default function VideoEditorInterface() {
             <div className="w-full bg-black rounded-xl border border-slate-700/50 overflow-hidden group aspect-video">
               {project?.videos?.[0]?.file_path ? (
                 <video
+                  // TODO: need to change the video path from localhost
                   src={`http://localhost:8000${project.videos[0].file_path}`}
                   className="w-full h-full object-contain"
                   controls

@@ -13,6 +13,8 @@ import io
 import logging
 import sys
 from typing import Optional, Tuple, List, Dict, Any
+import json
+from pydantic import BaseModel
 
 # Add project root to path
 project_root = str(Path(__file__).parent.parent.parent)
@@ -147,13 +149,14 @@ async def generate_lipsync_from_transcript(
     print(f"Output Path: {request.output_path}")
     if request.transcript and request.transcript.videos:
         print(f"Video Segments: {len(request.transcript.videos[0].segments) if request.transcript.videos[0].segments else 0} segments")
+    print(json.dumps(request.transcript.dict(), indent=2, ensure_ascii=False))
     print("======================\n")
     
     if test_mode:
         print(f"[TEST MODE] Bypassing processing for job: {request.job_id}")
         return {
             "job_id": request.job_id or f"test_job_{uuid.uuid4().hex[:8]}",
-            "output_path": request.output_path or f"/mock/output/{uuid.uuid4().hex[:8]}.mp4",
+            "output_path": request.video_path,
             "message": "Test mode: Processing bypassed"
         }
     # try:
