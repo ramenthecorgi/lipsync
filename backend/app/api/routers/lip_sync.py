@@ -328,6 +328,28 @@ class TTSResponse(BaseModel):
     concatenated_audio_path: str
     message: str
 
+class LipSyncRequest(BaseModel):
+    video_path: str = Field(..., description="Path to the input video file")
+    audio_path: str = Field(..., description="Path to the audio file for lip-sync")
+    output_path: Optional[str] = Field(None, description="Path to save the output video")
+    use_wav2lip: bool = Field(True, description="Whether to use Wav2Lip for lip-syncing (if available)")
+    face_det_batch_size: int = Field(1, description="Batch size for face detection")
+    wav2lip_batch_size: int = Field(16, description="Batch size for Wav2Lip")
+    resize_factor: int = Field(1, description="Reduce the resolution by this factor")
+    crop: Optional[Tuple[int, int, int, int]] = Field(
+        None,
+        description="Crop video (top, bottom, left, right)"
+    )
+    rotate: bool = Field(False, description="Rotate video 90 degrees counter-clockwise")
+    nosmooth: bool = Field(False, description="Disable smoothing of face detections")
+    fps: float = Field(25.0, description="FPS of output video")
+    pads: Tuple[int, int, int, int] = Field(
+        (0, 10, 0, 0),
+        description="Padding (top, bottom, left, right) for face detection"
+    )
+    static: bool = Field(False, description="Use first frame for all frames (for static images)")
+
+LipSyncResponse = LipSyncFromTranscriptResponse
 
 # @router.post("/generate-tts-audio", response_model=TTSResponse, tags=["tts-poc"])
 async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
@@ -510,32 +532,27 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
     )
 
 async def generate_lipsync_video(
-    video_path: str,
-    audio_path: str,
-    output_path: Optional[str] = None,
-    use_wav2lip: bool = True,
+    request: LipSyncRequest,
     test_mode: bool = False,
     **wav2lip_kwargs
-) -> Dict[str, Any]:
+) -> str:
     """
     Generate a lip-synced video by combining video with new audio.
     
     Args:
-        video_path: Path to the input video file
-        audio_path: Path to the audio file to use for lip-syncing
-        output_path: Optional output path for the result
-        use_wav2lip: Whether to use Wav2Lip for lip-syncing (if available)
+        request: LipSyncRequest object containing video_path, audio_path, and other parameters
+        test_mode: If True, bypasses heavy processing
         **wav2lip_kwargs: Additional arguments to pass to Wav2Lip
         
     Returns:
         Path to the generated video file
     """
     try:
-        print(f"Generating lip-synced video from {video_path} with audio {audio_path}")
         
         # Resolve input paths relative to backend directory
-        video_path = resolve_backend_path(video_path)
-        audio_path = resolve_backend_path(audio_path)
+        video_path = resolve_backend_path(request.video_path)
+        audio_path = resolve_backend_path(request.audio_path)
+        print(f"Generating lip-synced video from {video_path} with audio {audio_path}")
         
         # Verify input files exist
         if not os.path.isfile(video_path):
@@ -614,29 +631,6 @@ async def generate_lipsync_video(
         print(f"Error in generate_lipsync_video: {str(e)}")
         raise
 
-class LipSyncRequest(BaseModel):
-    video_path: str = Field(..., description="Path to the input video file")
-    audio_path: str = Field(..., description="Path to the audio file for lip-sync")
-    output_path: Optional[str] = Field(None, description="Path to save the output video")
-    use_wav2lip: bool = Field(True, description="Whether to use Wav2Lip for lip-syncing (if available)")
-    face_det_batch_size: int = Field(1, description="Batch size for face detection")
-    wav2lip_batch_size: int = Field(16, description="Batch size for Wav2Lip")
-    resize_factor: int = Field(1, description="Reduce the resolution by this factor")
-    crop: Optional[Tuple[int, int, int, int]] = Field(
-        None,
-        description="Crop video (top, bottom, left, right)"
-    )
-    rotate: bool = Field(False, description="Rotate video 90 degrees counter-clockwise")
-    nosmooth: bool = Field(False, description="Disable smoothing of face detections")
-    fps: float = Field(25.0, description="FPS of output video")
-    pads: Tuple[int, int, int, int] = Field(
-        (0, 10, 0, 0),
-        description="Padding (top, bottom, left, right) for face detection"
-    )
-    static: bool = Field(False, description="Use first frame for all frames (for static images)")
-
-LipSyncResponse = LipSyncFromTranscriptResponse
-
 async def generate_lipsync_endpoint(request: LipSyncRequest, test_mode: bool = False):
     """
     Generate a lip-synced video from a source video and audio file.
@@ -659,10 +653,8 @@ async def generate_lipsync_endpoint(request: LipSyncRequest, test_mode: bool = F
         }
         
         # Generate lip-synced video
-        output_path = generate_lipsync_video(
-            video_path=video_path,
-            audio_path=audio_path,
-            output_path=output_path,
+        output_path = await generate_lipsync_video(
+            request=request,
             test_mode=test_mode,
             **wav2lip_params
         )
