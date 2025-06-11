@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # File storage
     UPLOAD_DIR: str = "uploads"
     STATIC_DIR: str = "static"
+    OUTPUT_VIDEO_DIR: str = "output_videos"
     MAX_UPLOAD_SIZE: int = 100 * 1024 * 1024  # 100MB
     
     # JWT settings

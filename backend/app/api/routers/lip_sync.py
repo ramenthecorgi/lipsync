@@ -35,47 +35,46 @@ router = APIRouter()
 
 def resolve_backend_path(path: str) -> str:
     """
-    Resolve a path to an absolute filesystem path.
+    Resolve a path to a backend-relative path with leading slash.
     
     Args:
         path: The path to resolve. Can be:
-            - Absolute path (returns as-is)
-            - Path starting with /static/ (resolved relative to backend directory)
-            - Relative path (resolved relative to current working directory)
+            - Absolute path within backend directory -> converts to /relative/path
+            - Path starting with / -> treated as relative to backend root
+            - Relative path -> treated as relative to backend root
             
     Returns:
-        str: Absolute path to the file in the filesystem.
+        str: Path relative to backend root with leading slash (e.g., "/output_videos/file.mp4")
     """
     if not path:
         return ""
         
-    # Convert to Path object
-    path_obj = Path(path)
+    # Get backend directory
+    backend_dir = Path(__file__).parent.parent.parent.parent  # Go up to backend/
     
-    # If it's already an absolute path, just resolve it
+    # If it's an absolute path within the backend directory
+    path_obj = Path(path)
     if path_obj.is_absolute():
-        return str(path_obj.resolve())
-        
-    # Handle paths starting with /static/ (common in web paths)
-    if path.startswith('/static/'):
-        # Remove the leading slash to make it relative to backend dir
-        static_path = path[1:]  # Remove leading slash
-        backend_dir = Path(__file__).parent.parent.parent.parent  # Go up to backend/
-        resolved_path = backend_dir / static_path
-        
-        # Check if the resolved path exists
-        if not resolved_path.exists():
-            # Try alternative static directory location (common in FastAPI)
-            static_dir = backend_dir / "static"
-            if static_dir.exists():
-                alt_path = static_dir / path.split("/static/", 1)[1]
-                if alt_path.exists():
-                    return str(alt_path.resolve())
-        
-        return str(resolved_path.resolve())
-        
-    # Otherwise, resolve it relative to the current working directory
-    return str((Path.cwd() / path).resolve())
+        try:
+            # Convert to path relative to backend dir
+            rel_path = path_obj.relative_to(backend_dir)
+            return f"/{rel_path}"
+        except ValueError:
+            # Not within backend directory, treat as relative
+            pass
+    
+    # Handle paths that might have leading slash
+    clean_path = path.lstrip('/')
+    
+    # Join with backend directory and resolve
+    resolved_path = (backend_dir / clean_path).resolve()
+    
+    # Verify the path is within the backend directory for security
+    try:
+        rel_path = resolved_path.relative_to(backend_dir)
+        return f"/{rel_path}"
+    except ValueError:
+        raise ValueError(f"Path {path} resolves outside backend directory")
 
 
 # --- Configuration for TTS --- 
@@ -680,13 +679,13 @@ async def generate_lipsync_endpoint(request: LipSyncRequest, test_mode: bool = F
             **wav2lip_params
         )
         
-        # Convert output path to relative for the response
-        relative_output = resolve_backend_path(output_path)
-        print(f"Relative output path: {relative_output}")
+        # Return just the filename for the video
+        filename = os.path.basename(output_path)
+        print(f"Generated video filename: {filename}")
 
         return LipSyncResponse(
             job_id=str(uuid.uuid4()),
-            output_path=relative_output,
+            output_path="/videos/" + filename,  # Just the filename, e.g., "lipsync_1234567890.mp4"
             message="Lip-sync generation completed successfully"
         )
         

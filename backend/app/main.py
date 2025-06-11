@@ -45,9 +45,13 @@ app.include_router(api_router, prefix="/api/v1")
 # Create necessary directories
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 os.makedirs(settings.STATIC_DIR, exist_ok=True)
+os.makedirs(settings.OUTPUT_VIDEO_DIR, exist_ok=True)
 
 # Mount static files directory
 app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
+
+# Mount output_videos directory for serving generated videos
+app.mount("/videos", StaticFiles(directory=settings.OUTPUT_VIDEO_DIR), name="videos")
 
 @app.get("/api/health")
 async def health_check():
