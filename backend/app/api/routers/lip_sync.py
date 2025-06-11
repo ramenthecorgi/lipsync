@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Query
 from typing import List, Optional, Dict, Any
 import os
 import shutil
@@ -123,7 +123,10 @@ class LipSyncFromTranscriptResponse(BaseModel):
     message: str
 
 @router.post("/generate-lipsync-from-transcript", response_model=LipSyncFromTranscriptResponse, tags=["lipsync"])
-async def generate_lipsync_from_transcript(request: LipSyncFromTranscriptRequest = Body(...)):
+async def generate_lipsync_from_transcript(
+    request: LipSyncFromTranscriptRequest = Body(...),
+    test_mode: bool = Query(False, description="Enable test mode to bypass heavy processing")
+):
     """
     Generate a lip-synced video from a video and transcript data.
     
@@ -132,57 +135,76 @@ async def generate_lipsync_from_transcript(request: LipSyncFromTranscriptRequest
     2. Combines the audio segments
     3. Applies lip-syncing to the video
     
+    Set test_mode=true to bypass heavy processing and return a mock response.
+    
     Returns the path to the generated video.
     """
-    try:
-        if not request.transcript.videos or not request.transcript.videos[0].segments:
-            raise HTTPException(
-                status_code=400,
-                detail="No valid video segments found in the transcript"
-            )
+    # Log incoming request details
+    print("\n=== Incoming Request ===")
+    print(f"Test mode: {test_mode}")
+    print(f"Job ID: {request.job_id}")
+    print(f"Video Path: {request.video_path}")
+    print(f"Output Path: {request.output_path}")
+    if request.transcript and request.transcript.videos:
+        print(f"Video Segments: {len(request.transcript.videos[0].segments) if request.transcript.videos[0].segments else 0} segments")
+    print("======================\n")
+    
+    if test_mode:
+        print(f"[TEST MODE] Bypassing processing for job: {request.job_id}")
+        return {
+            "job_id": request.job_id or f"test_job_{uuid.uuid4().hex[:8]}",
+            "output_path": request.output_path or f"/mock/output/{uuid.uuid4().hex[:8]}.mp4",
+            "message": "Test mode: Processing bypassed"
+        }
+    # try:
+    #     if not request.transcript.videos or not request.transcript.videos[0].segments:
+    #         raise HTTPException(
+    #             status_code=400,
+    #             detail="No valid video segments found in the transcript"
+    #         )
         
-        # Create a TTS request from the transcript data
-        tts_request = TTSRequest(
-            title=request.transcript.title,
-            description=request.transcript.description,
-            is_public=request.transcript.is_public,
-            videos=[{
-                "title": request.transcript.videos[0].title,
-                "file_path": request.transcript.videos[0].file_path,
-                "duration": request.transcript.videos[0].duration,
-                "segments": [{
-                    "start_time": s.start_time,
-                    "end_time": s.end_time,
-                    "text": s.text,
-                    "is_silence": s.is_silence
-                } for s in request.transcript.videos[0].segments]
-            }],
-            job_id=request.job_id,
-            voice="default",  # Using default voice
-            language="en"     # Default to English
-        )
+    #     # Create a TTS request from the transcript data
+    #     tts_request = TTSRequest(
+    #         title=request.transcript.title,
+    #         description=request.transcript.description,
+    #         is_public=request.transcript.is_public,
+    #         videos=[{
+    #             "title": request.transcript.videos[0].title,
+    #             "file_path": request.transcript.videos[0].file_path,
+    #             "duration": request.transcript.videos[0].duration,
+    #             "segments": [{
+    #                 "start_time": s.start_time,
+    #                 "end_time": s.end_time,
+    #                 "text": s.text,
+    #                 "is_silence": s.is_silence
+    #             } for s in request.transcript.videos[0].segments]
+    #         }],
+    #         job_id=request.job_id,
+    #         voice="default",  # Using default voice
+    #         language="en"     # Default to English
+    #     )
         
-        # Generate TTS audio
-        tts_response = await generate_tts_audio_endpoint(tts_request)
+    #     # Generate TTS audio
+    #     tts_response = await generate_tts_audio_endpoint(tts_request)
         
-        # Create a lip-sync request
-        lipsync_request = LipSyncRequest(
-            video_path=request.video_path,
-            audio_path=tts_response.concatenated_audio_path,
-            output_path=request.output_path,
-            job_id=request.job_id
-        )
+    #     # Create a lip-sync request
+    #     lipsync_request = LipSyncRequest(
+    #         video_path=request.video_path,
+    #         audio_path=tts_response.concatenated_audio_path,
+    #         output_path=request.output_path,
+    #         job_id=request.job_id
+    #     )
         
-        # Generate lip-synced video
-        return await generate_lipsync_endpoint(lipsync_request)
+    #     # Generate lip-synced video
+    #     return await generate_lipsync_endpoint(lipsync_request)
         
-    except HTTPException as he:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to process lip-sync from transcript: {str(e)}"
-        )
+    # except HTTPException as he:
+    #     raise
+    # except Exception as e:
+    #     raise HTTPException(
+    #         status_code=500,
+    #         detail=f"Failed to process lip-sync from transcript: {str(e)}"
+    #     )
 
 
 # --- Helper Functions for TTS --- 
@@ -474,13 +496,6 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
         concatenated_audio_path=str(concatenated_output_path),
         message=final_message
     )
-
-# # Register the TTS endpoint
-# router.post(
-#     "/generate-tts-audio", 
-#     response_model=TTSResponse, 
-#     tags=["tts-poc"]
-# )(generate_tts_audio_endpoint)
 
 def generate_lipsync_video(
     video_path: str,
