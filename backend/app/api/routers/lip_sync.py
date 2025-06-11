@@ -116,7 +116,7 @@ class LipSyncFromTranscriptRequest(BaseModel):
     """Request model for generating lip-synced video from transcript."""
     video_path: str = Field(..., description="Path to the input video file")
     transcript: TranscriptData = Field(..., description="Transcript data in JSON format")
-    output_path: str = Field(..., description="Path to save the output video")
+    output_path: str = Field(..., description="Path to save the output video. DO NOT USE")
     job_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Job ID for tracking")
 
 class LipSyncFromTranscriptResponse(BaseModel):
@@ -156,62 +156,63 @@ async def generate_lipsync_from_transcript(
         print(f"[TEST MODE] Bypassing processing for job: {request.job_id}")
         print("[TEST MODE] Simulating 5-second processing delay...")
         import time
-        time.sleep(5)  # Add 5-second delay
+        time.sleep(2)  # Add 5-second delay
         print("[TEST MODE] Delay complete, returning mock response")
         return {
             "job_id": request.job_id or f"test_job_{uuid.uuid4().hex[:8]}",
             "output_path": request.video_path,
             "message": "Test mode: Processing bypassed with 5s delay"
         }
-    # try:
-    #     if not request.transcript.videos or not request.transcript.videos[0].segments:
-    #         raise HTTPException(
-    #             status_code=400,
-    #             detail="No valid video segments found in the transcript"
-    #         )
+
+    try:
+        if not request.transcript.videos or not request.transcript.videos[0].segments:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid video segments found in the transcript"
+            )
         
-    #     # Create a TTS request from the transcript data
-    #     tts_request = TTSRequest(
-    #         title=request.transcript.title,
-    #         description=request.transcript.description,
-    #         is_public=request.transcript.is_public,
-    #         videos=[{
-    #             "title": request.transcript.videos[0].title,
-    #             "file_path": request.transcript.videos[0].file_path,
-    #             "duration": request.transcript.videos[0].duration,
-    #             "segments": [{
-    #                 "start_time": s.start_time,
-    #                 "end_time": s.end_time,
-    #                 "text": s.text,
-    #                 "is_silence": s.is_silence
-    #             } for s in request.transcript.videos[0].segments]
-    #         }],
-    #         job_id=request.job_id,
-    #         voice="default",  # Using default voice
-    #         language="en"     # Default to English
-    #     )
+        # Create a TTS request from the transcript data
+        tts_request = TTSRequest(
+            title=request.transcript.title,
+            description=request.transcript.description,
+            is_public=request.transcript.is_public,
+            videos=[{
+                "title": request.transcript.videos[0].title,
+                "file_path": request.transcript.videos[0].file_path,
+                "duration": request.transcript.videos[0].duration,
+                "segments": [{
+                    "start_time": s.start_time,
+                    "end_time": s.end_time,
+                    "text": s.text,
+                    "is_silence": s.is_silence
+                } for s in request.transcript.videos[0].segments]
+            }],
+            job_id=request.job_id,
+            voice="default",  # Using default voice
+            language="en"     # Default to English
+        )
         
-    #     # Generate TTS audio
-    #     tts_response = await generate_tts_audio_endpoint(tts_request)
+        # Generate TTS audio
+        tts_response = await generate_tts_audio_endpoint(tts_request)
         
-    #     # Create a lip-sync request
-    #     lipsync_request = LipSyncRequest(
-    #         video_path=request.video_path,
-    #         audio_path=tts_response.concatenated_audio_path,
-    #         output_path=request.output_path,
-    #         job_id=request.job_id
-    #     )
+        # Create a lip-sync request
+        lipsync_request = LipSyncRequest(
+            video_path=request.video_path,
+            audio_path=tts_response.concatenated_audio_path,
+            job_id=request.job_id,
+            use_wav2lip=False,
+        )
         
-    #     # Generate lip-synced video
-    #     return await generate_lipsync_endpoint(lipsync_request)
+        # Generate lip-synced video
+        return await generate_lipsync_endpoint(lipsync_request)
         
-    # except HTTPException as he:
-    #     raise
-    # except Exception as e:
-    #     raise HTTPException(
-    #         status_code=500,
-    #         detail=f"Failed to process lip-sync from transcript: {str(e)}"
-    #     )
+    except HTTPException as he:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process lip-sync from transcript: {str(e)}"
+        )
 
 
 # --- Helper Functions for TTS --- 
@@ -538,17 +539,10 @@ def generate_lipsync_video(
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
         
         # Set default output path if not provided
-        if output_path is None:
-            output_dir = os.path.abspath("output_videos")
-            os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, f"lipsync_output_{int(time.time())}.mp4")
-        else:
-            output_path = os.path.abspath(output_path)
-            # Create output directory if it doesn't exist
-            output_dir = os.path.dirname(output_path)
-            if output_dir and not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
-        
+        output_dir = os.path.abspath("output_videos")
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"lipsync_output_{int(time.time())}.mp4")
+       
         print(f"Output will be saved to: {output_path}")
         
         # Create a temporary output file in the same directory as the final output
@@ -640,7 +634,6 @@ class LipSyncRequest(BaseModel):
 
 LipSyncResponse = LipSyncFromTranscriptResponse
 
-# @router.post("/generate-lipsync", response_model=LipSyncResponse, tags=["lipsync"])
 async def generate_lipsync_endpoint(request: LipSyncRequest = Body(...)):
     """
     Generate a lip-synced video from a source video and audio file.
@@ -656,7 +649,7 @@ async def generate_lipsync_endpoint(request: LipSyncRequest = Body(...)):
         
         video_path = resolve_path(request.video_path)
         audio_path = resolve_path(request.audio_path)
-        output_path = resolve_path(request.output_path) if request.output_path else None
+        output_path = None
         
         # Verify input files exist
         if not os.path.isfile(video_path):

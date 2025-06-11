@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { Loader2, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
 import { startVideoGeneration, TranscriptData } from './services/videoGenerationApi';
 
@@ -18,6 +18,7 @@ export default function VideoGenerationPage() {
   const { videoId = '' } = useParams<{ videoId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   
   // Get video URL and transcript from route state
   const { videoUrl, transcript } = (location.state as LocationState) || {};
@@ -52,7 +53,7 @@ export default function VideoGenerationPage() {
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       
-      // Start the video generation process
+      // Start the video generation process with test mode from URL
       const response = await startVideoGeneration({
         videoPath: videoUrl,
         transcript,
