@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 import uuid
 import torch
@@ -34,18 +35,20 @@ router = APIRouter()
 
 def resolve_backend_path(path: str) -> str:
     """
-    Resolve a path relative to the backend directory.
+    Resolve a path to an absolute filesystem path.
     
     Args:
-        path: The path to resolve. If relative, will be resolved relative to the backend directory.
-            If None or empty, returns an empty string.
+        path: The path to resolve. Can be:
+            - Absolute path (returns as-is)
+            - Path starting with /static/ (resolved relative to backend directory)
+            - Relative path (resolved relative to current working directory)
             
     Returns:
-        str: Absolute path to the file in the filesystem, resolved relative to the backend directory.
+        str: Absolute path to the file in the filesystem.
     """
     if not path:
         return ""
-    
+        
     # Convert to Path object
     path_obj = Path(path)
     
@@ -53,11 +56,27 @@ def resolve_backend_path(path: str) -> str:
     if path_obj.is_absolute():
         return str(path_obj.resolve())
         
-    # Otherwise, resolve it relative to the backend directory
-    backend_dir = Path(__file__).parent.parent.parent.parent  # Go up to backend/
-    return str((backend_dir / path).resolve())
+    # Handle paths starting with /static/ (common in web paths)
+    if path.startswith('/static/'):
+        # Remove the leading slash to make it relative to backend dir
+        static_path = path[1:]  # Remove leading slash
+        backend_dir = Path(__file__).parent.parent.parent.parent  # Go up to backend/
+        resolved_path = backend_dir / static_path
+        
+        # Check if the resolved path exists
+        if not resolved_path.exists():
+            # Try alternative static directory location (common in FastAPI)
+            static_dir = backend_dir / "static"
+            if static_dir.exists():
+                alt_path = static_dir / path.split("/static/", 1)[1]
+                if alt_path.exists():
+                    return str(alt_path.resolve())
+        
+        return str(resolved_path.resolve())
+        
+    # Otherwise, resolve it relative to the current working directory
+    return str((Path.cwd() / path).resolve())
 
-# --- TTS and Lip Sync POC Endpoints --- #
 
 # --- Configuration for TTS --- 
 # Assuming this file (videos.py) is at backend/app/api/routers/videos.py
@@ -199,9 +218,12 @@ async def generate_lipsync_from_transcript(
         # Generate TTS audio
         tts_response = await generate_tts_audio_endpoint(tts_request)
         
-        # Create a lip-sync request
+        # Create a lip-sync request - ensure video_path is a string
+        # Remove leading slash if present to prevent joining issues
+        video_path = request.video_path.lstrip('/')
+        video_path = str(BASE_DIR / video_path)
         lipsync_request = LipSyncRequest(
-            video_path=request.video_path,
+            video_path=video_path,
             audio_path=tts_response.concatenated_audio_path,
             job_id=request.job_id,
             use_wav2lip=False,
@@ -550,8 +572,8 @@ async def generate_lipsync_video(
     try:
         
         # Resolve input paths relative to backend directory
-        video_path = resolve_backend_path(request.video_path)
-        audio_path = resolve_backend_path(request.audio_path)
+        video_path = request.video_path
+        audio_path = request.audio_path
         print(f"Generating lip-synced video from {video_path} with audio {audio_path}")
         
         # Verify input files exist
@@ -570,8 +592,8 @@ async def generate_lipsync_video(
         # Create a temporary output file in the same directory as the final output
         temp_output = f"{output_path}.temp.mp4"
         
-        # Only use Wav2Lip if available, requested, and not in test mode
-        if use_wav2lip and WAV2LIP_AVAILABLE and not test_mode:
+        # Use Wav2Lip if available and not in test mode
+        if request.use_wav2lip and WAV2LIP_AVAILABLE and not test_mode:
             try:
                 print("Using Wav2Lip for lip-syncing...")
                 wav2lip = Wav2LipService()
@@ -585,7 +607,6 @@ async def generate_lipsync_video(
             except Exception as e:
                 print(f"Wav2Lip processing failed: {str(e)}")
                 print("Falling back to basic audio muxing...")
-                use_wav2lip = False
         else:
             print("Using basic audio muxing (no lip-sync)")
             cmd = [
@@ -624,7 +645,7 @@ async def generate_lipsync_video(
         if not os.path.exists(output_path):
             raise RuntimeError(f"Failed to create output file at {output_path}")
             
-        print(f"Successfully created {'lip-synced ' if use_wav2lip and WAV2LIP_AVAILABLE else ''}video at {output_path}")
+        print(f"Successfully created video at {output_path}")
         return output_path
         
     except Exception as e:
@@ -660,8 +681,9 @@ async def generate_lipsync_endpoint(request: LipSyncRequest, test_mode: bool = F
         )
         
         # Convert output path to relative for the response
-        relative_output = os.path.relpath(output_path, Path(__file__).parent.parent.parent)
-        
+        relative_output = resolve_backend_path(output_path)
+        print(f"Relative output path: {relative_output}")
+
         return LipSyncResponse(
             job_id=str(uuid.uuid4()),
             output_path=relative_output,
