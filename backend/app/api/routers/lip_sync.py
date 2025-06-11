@@ -37,20 +37,23 @@ def resolve_backend_path(path: str) -> str:
     Resolve a path relative to the backend directory.
     
     Args:
-        path: The path to resolve. Can be absolute or relative.
-            If None, returns an empty string.
+        path: The path to resolve. If relative, will be resolved relative to the backend directory.
+            If None or empty, returns an empty string.
             
     Returns:
-        str: Absolute path resolved relative to the backend directory.
+        str: Absolute path to the file in the filesystem, resolved relative to the backend directory.
     """
     if not path:
         return ""
+    
+    # Convert to Path object
+    path_obj = Path(path)
+    
+    # If it's already an absolute path, just resolve it
+    if path_obj.is_absolute():
+        return str(path_obj.resolve())
         
-    path = str(path)
-    if os.path.isabs(path):
-        return path
-        
-    # Get the backend directory (one level up from app directory)
+    # Otherwise, resolve it relative to the backend directory
     backend_dir = Path(__file__).parent.parent.parent.parent  # Go up to backend/
     return str((backend_dir / path).resolve())
 
@@ -151,18 +154,19 @@ async def generate_lipsync_from_transcript(
         print(f"Video Segments: {len(request.transcript.videos[0].segments) if request.transcript.videos[0].segments else 0} segments")
     print(json.dumps(request.transcript.dict(), indent=2, ensure_ascii=False))
     print("======================\n")
-    
-    if test_mode:
-        print(f"[TEST MODE] Bypassing processing for job: {request.job_id}")
-        print("[TEST MODE] Simulating 5-second processing delay...")
-        import time
-        time.sleep(2)  # Add 5-second delay
-        print("[TEST MODE] Delay complete, returning mock response")
-        return {
-            "job_id": request.job_id or f"test_job_{uuid.uuid4().hex[:8]}",
-            "output_path": request.video_path,
-            "message": "Test mode: Processing bypassed with 5s delay"
-        }
+
+    # Uncomment to test echoing input url    
+    # if test_mode:
+    #     print(f"[TEST MODE] Bypassing processing for job: {request.job_id}")
+    #     print("[TEST MODE] Simulating 5-second processing delay...")
+    #     import time
+    #     time.sleep(2)  # Add 5-second delay
+    #     print("[TEST MODE] Delay complete, returning mock response")
+    #     return {
+    #         "job_id": request.job_id or f"test_job_{uuid.uuid4().hex[:8]}",
+    #         "output_path": request.video_path,
+    #         "message": "Test mode: Processing bypassed with 5s delay"
+    #     }
 
     try:
         if not request.transcript.videos or not request.transcript.videos[0].segments:
@@ -204,7 +208,7 @@ async def generate_lipsync_from_transcript(
         )
         
         # Generate lip-synced video
-        return await generate_lipsync_endpoint(lipsync_request)
+        return await generate_lipsync_endpoint(lipsync_request, test_mode=test_mode)
         
     except HTTPException as he:
         raise
@@ -505,13 +509,14 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
         message=final_message
     )
 
-def generate_lipsync_video(
+async def generate_lipsync_video(
     video_path: str,
     audio_path: str,
     output_path: Optional[str] = None,
     use_wav2lip: bool = True,
+    test_mode: bool = False,
     **wav2lip_kwargs
-) -> str:
+) -> Dict[str, Any]:
     """
     Generate a lip-synced video by combining video with new audio.
     
@@ -548,8 +553,8 @@ def generate_lipsync_video(
         # Create a temporary output file in the same directory as the final output
         temp_output = f"{output_path}.temp.mp4"
         
-        # Use Wav2Lip if available and requested
-        if use_wav2lip and WAV2LIP_AVAILABLE:
+        # Only use Wav2Lip if available, requested, and not in test mode
+        if use_wav2lip and WAV2LIP_AVAILABLE and not test_mode:
             try:
                 print("Using Wav2Lip for lip-syncing...")
                 wav2lip = Wav2LipService()
@@ -564,9 +569,7 @@ def generate_lipsync_video(
                 print(f"Wav2Lip processing failed: {str(e)}")
                 print("Falling back to basic audio muxing...")
                 use_wav2lip = False
-        
-        # Fall back to basic audio muxing if Wav2Lip is not available or failed
-        if not use_wav2lip or not WAV2LIP_AVAILABLE:
+        else:
             print("Using basic audio muxing (no lip-sync)")
             cmd = [
                 'ffmpeg',
@@ -634,29 +637,13 @@ class LipSyncRequest(BaseModel):
 
 LipSyncResponse = LipSyncFromTranscriptResponse
 
-async def generate_lipsync_endpoint(request: LipSyncRequest = Body(...)):
+async def generate_lipsync_endpoint(request: LipSyncRequest, test_mode: bool = False):
     """
     Generate a lip-synced video from a source video and audio file.
     
     This endpoint uses Wav2Lip for high-quality lip-syncing when available.
     """
     try:
-        # Convert relative paths to absolute paths relative to the backend directory
-        def resolve_path(path: str) -> str:
-            resolved = resolve_backend_path(path)
-            print(f"Resolved path: {path} -> {resolved}")  # Debug log
-            return resolved
-        
-        video_path = resolve_path(request.video_path)
-        audio_path = resolve_path(request.audio_path)
-        output_path = None
-        
-        # Verify input files exist
-        if not os.path.isfile(video_path):
-            raise ValueError(f"Video file not found: {video_path}")
-        if not os.path.isfile(audio_path):
-            raise ValueError(f"Audio file not found: {audio_path}")
-        
         # Prepare Wav2Lip parameters
         wav2lip_params = {
             'use_wav2lip': request.use_wav2lip,
@@ -676,6 +663,7 @@ async def generate_lipsync_endpoint(request: LipSyncRequest = Body(...)):
             video_path=video_path,
             audio_path=audio_path,
             output_path=output_path,
+            test_mode=test_mode,
             **wav2lip_params
         )
         
