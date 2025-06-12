@@ -17,14 +17,7 @@ from typing import List, Optional, Dict, Any, Tuple
 
 # Import models from the new location
 from app.models.tts.models import (
-    SegmentModel,
     TTSRequest,
-    TTSResponse,
-    TranscriptData,
-    TranscriptMetadata,
-    TranscriptSegment,
-    VideoModel,
-    VideoTranscript
 )
 from app.models.lipsync.models import (
     LipSyncFromTranscriptRequest,
@@ -217,8 +210,6 @@ async def generate_lipsync_from_transcript(
 
 # --- API Endpoint for TTS Generation --- 
 # Import models from their respective modules
-from app.models.tts.models import TTSRequest, TTSResponse
-from app.models.lipsync.models import LipSyncRequest, LipSyncResponse
 
 async def generate_tts_audio_endpoint(
     background_tasks: BackgroundTasks,
@@ -244,26 +235,6 @@ async def generate_tts_audio_endpoint(
             status_code=500,
             detail=f"Failed to generate TTS audio: {str(e)}"
         )
-
-    # Schedule cleanup of the concatenated audio file after the response is sent
-    background_tasks.add_task(
-        cleanup_temp_audio,
-        str(concatenated_output_path)
-    )
-    
-    # Also clean up any temporary segment files if they still exist
-    if job_temp_segments_dir.exists():
-        try:
-            shutil.rmtree(job_temp_segments_dir, ignore_errors=True)
-            print(f"Cleaned up temporary segment directory: {job_temp_segments_dir}")
-        except Exception as e:
-            print(f"Error cleaning up segment directory {job_temp_segments_dir}: {e}")
-    
-    return TTSResponse(
-        job_id=request.job_id,
-        concatenated_audio_path=str(concatenated_output_path),
-        message=final_message
-    )
 
 async def generate_lipsync_video(
     request: LipSyncRequest,
