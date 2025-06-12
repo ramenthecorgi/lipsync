@@ -84,9 +84,20 @@ export default function VideoEditorInterface() {
     setSelectedSegmentId(segmentId);
     const segment = project?.segments.find((s: VideoSegment) => s.id === segmentId);
     if (segment) {
-      const videoElement = document.querySelector('video');
+      const videoElement = document.querySelector('video') as HTMLVideoElement | null;
       if (videoElement) {
-        videoElement.currentTime = segment.startTime; // Sync player time to segment start
+        const seekTo = segment.startTime;
+        // If metadata is already loaded we can seek immediately
+        if (videoElement.readyState >= 1) {
+          videoElement.currentTime = seekTo;
+        } else {
+          // Otherwise wait until metadata is loaded before seeking
+          const onLoaded = () => {
+            videoElement.currentTime = seekTo;
+            videoElement.removeEventListener('loadedmetadata', onLoaded);
+          };
+          videoElement.addEventListener('loadedmetadata', onLoaded);
+        }
       }
     }
   };
