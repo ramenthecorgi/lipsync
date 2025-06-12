@@ -183,7 +183,7 @@ async def generate_lipsync_from_transcript(
         )
         
         # Generate TTS audio
-        tts_response = await generate_tts_audio_endpoint(background_tasks, tts_request)
+        tts_response = await generate_tts_audio(background_tasks, tts_request)
         
         # Create a lip-sync request - ensure video_path is a string
         # Remove leading slash if present to prevent joining issues
@@ -211,7 +211,7 @@ async def generate_lipsync_from_transcript(
 # --- API Endpoint for TTS Generation --- 
 # Import models from their respective modules
 
-async def generate_tts_audio_endpoint(
+async def generate_tts_audio(
     background_tasks: BackgroundTasks,
     request: TTSRequest,
 ):
