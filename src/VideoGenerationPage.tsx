@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Loader2, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
 import { startVideoGeneration, TranscriptData } from './services/videoGenerationApi';
 
@@ -28,35 +28,41 @@ export default function VideoGenerationPage() {
     generatedVideoUrl: null
   });
 
-  const hasStartedRef = useRef(false);
-
-  // Start generation when component mounts
+  /**
+   * BUG FIX: Multiple API calls were happening due to:
+   * 1. useEffect with [videoUrl, transcript] would re-run when these values changed
+   * 2. startGeneration was recreated on every render, potentially causing multiple calls
+   * 
+   * SOLUTION:
+   * 1. Use empty dependency array [] to run only on mount
+   * 2. Memoize startGeneration with useCallback to maintain referential equality
+   * 3. Manually check for required data inside the effect
+   */
   useEffect(() => {
-    // Prevent multiple calls if we've already started or don't have required data
-    if (hasStartedRef.current || !videoUrl || !transcript) {
-      if (!videoUrl || !transcript) {
-        setState(prev => ({ ...prev, error: 'Missing video URL or transcript' }));
-      }
+    console.log('Component mounted, starting video generation');
+    
+    // Manually check for required data since we're not in the dependency array
+    if (!videoUrl || !transcript) {
+      setState(prev => ({ ...prev, error: 'Missing video URL or transcript' }));
       return;
     }
     
-    // Mark as started and begin generation
-    hasStartedRef.current = true;
+    // Start the generation process
     startGeneration();
     
-    // Cleanup function to reset if component unmounts
-    return () => {
-      hasStartedRef.current = false;
-    };
-  }, [videoUrl, transcript]);
+    // Empty dependency array means this effect runs once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   // Handle back navigation
   const handleBack = () => {
     navigate(-1);
   };
 
-  const startGeneration = async () => {
-    console.log('startGeneration called with videoId:', videoId, 'videoUrl:', videoUrl, 'has transcript:', !!transcript);
+  // Memoize the generation function to prevent unnecessary recreations
+  // This ensures the same function reference is used across re-renders
+  // unless videoId, videoUrl, or transcript change
+  const startGeneration = useCallback(async () => {
     if (!videoId || !transcript || !videoUrl) {
       setState(prev => ({ ...prev, error: 'Missing required parameters for video generation' }));
       return;
@@ -93,7 +99,7 @@ export default function VideoGenerationPage() {
         isLoading: false
       }));
     }
-  };
+  }, [videoId, videoUrl, transcript]);
   
 
   return (
