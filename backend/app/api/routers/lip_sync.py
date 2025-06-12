@@ -584,7 +584,12 @@ async def generate_lipsync_video(
         # Set default output path if not provided
         output_dir = os.path.abspath("output_videos")
         os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(output_dir, f"lipsync_output_{int(time.time())}.mp4")
+        
+        # Generate a consistent output filename based on input filenames
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
+        timestamp = int(time.time())
+        output_filename = f"lipsync_{video_name}_{timestamp}.mp4"
+        output_path = os.path.join(output_dir, output_filename)
        
         print(f"Output will be saved to: {output_path}")
         

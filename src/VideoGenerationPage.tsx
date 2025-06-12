@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { Loader2, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
 import { startVideoGeneration, TranscriptData } from './services/videoGenerationApi';
@@ -18,7 +18,6 @@ export default function VideoGenerationPage() {
   const { videoId = '' } = useParams<{ videoId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   
   // Get video URL and transcript from route state
   const { videoUrl, transcript } = (location.state as LocationState) || {};
@@ -29,14 +28,26 @@ export default function VideoGenerationPage() {
     generatedVideoUrl: null
   });
 
+  const hasStartedRef = useRef(false);
+
   // Start generation when component mounts
   useEffect(() => {
-    if (!videoUrl || !transcript) {
-      setState(prev => ({ ...prev, error: 'Missing video URL or transcript' }));
+    // Prevent multiple calls if we've already started or don't have required data
+    if (hasStartedRef.current || !videoUrl || !transcript) {
+      if (!videoUrl || !transcript) {
+        setState(prev => ({ ...prev, error: 'Missing video URL or transcript' }));
+      }
       return;
     }
     
+    // Mark as started and begin generation
+    hasStartedRef.current = true;
     startGeneration();
+    
+    // Cleanup function to reset if component unmounts
+    return () => {
+      hasStartedRef.current = false;
+    };
   }, [videoUrl, transcript]);
   
   // Handle back navigation
@@ -45,6 +56,7 @@ export default function VideoGenerationPage() {
   };
 
   const startGeneration = async () => {
+    console.log('startGeneration called with videoId:', videoId, 'videoUrl:', videoUrl, 'has transcript:', !!transcript);
     if (!videoId || !transcript || !videoUrl) {
       setState(prev => ({ ...prev, error: 'Missing required parameters for video generation' }));
       return;
@@ -83,14 +95,6 @@ export default function VideoGenerationPage() {
     }
   };
   
-  // Start generation when component mounts and transcript is loaded
-  useEffect(() => {
-    if (transcript) {
-      startGeneration();
-    }
-  }, [transcript]);
-
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-slate-100 p-6">
