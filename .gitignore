@@ -90,3 +90,7 @@ backend/output_videos/
 # wav2lip
 backend/services/wav2lip_repo
 backend/services/wav2lip/.venv
+
+# temp folder
+backend/temp/
+backend/app/temp

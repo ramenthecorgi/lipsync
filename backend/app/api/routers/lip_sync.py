@@ -154,7 +154,7 @@ try:
     print(f"Using device: {device}")
     
     # Initialize TTS with a fast model by default
-    tts = TTS(model_name="tts_models/en/ljspeech/glow-tts", progress_bar=False, gpu=torch.cuda.is_available())
+    tts = TTS(model_name="tts_models/multilingual/multi-dataset/your_tts", progress_bar=False, gpu=torch.cuda.is_available())
     print("Coqui TTS initialized successfully")
 except Exception as e:
     tts = None
