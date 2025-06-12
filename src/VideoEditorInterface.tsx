@@ -52,22 +52,33 @@ export default function VideoEditorInterface() {
   const currentSegment = project?.segments.find((s: VideoSegment) => s.id === selectedSegmentId);
   const segmentDuration = currentSegment ? currentSegment.endTime - currentSegment.startTime : 0;
 
-  const estimateTextDuration = (text: string): number => {
-    const words = text.trim().split(/\s+/).filter((word: string) => word.length > 0);
-    const wordsPerSecond = 150 / 60;
-    return words.length / wordsPerSecond;
+  const countWords = (text: string): number => {
+    return text.trim() ? text.trim().split(/\s+/).filter((word: string) => word.length > 0).length : 0;
   };
 
-  const editedDuration = editText ? estimateTextDuration(editText) : segmentDuration;
-  const exceedsLimit = editedDuration > segmentDuration;
+  const [originalWordCount, setOriginalWordCount] = useState(0);
+  const [editedWordCount, setEditedWordCount] = useState(0);
+  const [exceedsLimit, setExceedsLimit] = useState(false);
 
+  // Update word counts and warning state when editText or currentSegment changes
+  useEffect(() => {
+    if (currentSegment) {
+      const original = countWords(currentSegment.originalText);
+      const edited = countWords(editText);
+      setOriginalWordCount(original);
+      setEditedWordCount(edited);
+      setExceedsLimit(Math.abs(edited - original) > 1);
+    }
+  }, [editText, currentSegment?.id]);
+
+  // Update edit text when current segment changes
   useEffect(() => {
     if (currentSegment) {
       setEditText(currentSegment.editedText || currentSegment.originalText);
       // Optionally, set currentTime to the start of the selected segment
       // setCurrentTime(currentSegment.startTime);
     }
-  }, [selectedSegmentId, project]); // Re-run if selectedSegmentId or the whole project changes
+  }, [currentSegment?.id]); // Only run when segment ID changes
 
   const handleSegmentClick = (segmentId: string) => {
     setSelectedSegmentId(segmentId);
@@ -196,12 +207,12 @@ export default function VideoEditorInterface() {
             <p className="text-slate-400 text-sm">Click any segment to edit its content</p>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-0">
+          <div className="w-full flex flex-wrap">
             {project?.segments.map((segment: VideoSegment) => (
               <button
                 key={segment.id}
                 onClick={() => handleSegmentClick(segment.id)}
-                className={`group relative p-6 border-r border-slate-700/50 last:border-r-0 transition-all duration-300 hover:bg-slate-700/30 ${selectedSegmentId === segment.id 
+                className={`group relative p-6 border-r border-slate-700/50 last:border-r-0 transition-all duration-300 hover:bg-slate-700/30 flex-1 ${selectedSegmentId === segment.id 
                     ? 'bg-slate-700/50' 
                     : ''
                 }`}
@@ -287,52 +298,55 @@ export default function VideoEditorInterface() {
                 
                 <div className="flex justify-between items-center mt-2 text-sm">
                   <span className="text-slate-400">
-                    Estimated: {editedDuration.toFixed(1)}s
+                    {editedWordCount} words
                   </span>
                   <span className={`font-medium ${exceedsLimit ? 'text-red-400' : 'text-emerald-400'}`}>
-                    {exceedsLimit ? 'Over limit' : 'Within limit'}
+                    {exceedsLimit ? 'Word count changed too much' : 'Within limit'}
                   </span>
                 </div>
               </div>
 
+
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 pt-8 border-t border-slate-700/50 mt-8">
+            <div className="flex-1 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <button 
+                onClick={handleGenerateVoice}
+                disabled={isGenerating || !currentSegment}
+                className={`group flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg hover:-translate-y-0.5 ${isGenerating || !currentSegment ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-600/30' : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 hover:shadow-purple-500/30'}`}
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={18} />
+                    <span>Generate Voice & Sync</span>
+                  </>
+                )}
+              </button>
+
               {exceedsLimit && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="text-red-400 mt-0.5 flex-shrink-0" size={20} />
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 w-full max-w-2xl">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="text-red-400 mt-0.5 flex-shrink-0" size={16} />
                     <div>
-                      <div className="text-red-400 font-medium mb-1">
-                        Duration Exceeded
+                      <div className="text-red-400 text-sm font-medium">
+                        Word Count Warning
                       </div>
-                      <div className="text-red-300 text-sm">
-                        Your edit is {editedDuration.toFixed(1)}s but only {segmentDuration.toFixed(1)}s available. 
-                        Try shortening the text or split across segments.
+                      <div className="text-red-300 text-xs">
+                        Changed from {originalWordCount} to {editedWordCount} words (keep within ±1)
                       </div>
                     </div>
                   </div>
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-wrap gap-4 pt-8 border-t border-slate-700/50 mt-8">
-            <button 
-              onClick={handleGenerateVoice}
-              disabled={isGenerating || !currentSegment}
-              className={`group flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-200 font-medium shadow-lg hover:-translate-y-0.5 ${isGenerating || !currentSegment ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-600/30' : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 hover:shadow-purple-500/30'}`}
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  <span>Generating...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles size={18} />
-                  <span>Generate Voice & Sync</span>
-                </>
-              )}
-            </button>
           </div>
 
           {/* Final Warning */}
