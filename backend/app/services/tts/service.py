@@ -39,8 +39,9 @@ class TTSService:
                 print("CUDA is not available, using CPU")
             
             print("Initializing TTS model...")
+            # Use a model that supports voice cloning
             self.tts = TTS(
-                model_name="tts_models/en/ljspeech/glow-tts",
+                model_name="tts_models/multilingual/multi-dataset/your_tts",
                 progress_bar=False,
                 gpu=torch.cuda.is_available(),
                 config_path=None,
@@ -185,11 +186,31 @@ class TTSService:
             }
             
             # Handle different voice options
+            print(f"\n=== TTS Generation Parameters ===")
+            print(f"TTS Model: {self.tts.speakers if hasattr(self.tts, 'speakers') else 'No speakers available'}")
+            print(f"Voice cloning supported: {hasattr(self.tts, 'speakers')}")
+            print(f"Voice parameter received: {voice}")
+            
             if voice and voice != 'default':
                 if voice.endswith('.wav'):
-                    tts_kwargs['speaker_wav'] = voice
+                    if not os.path.exists(voice):
+                        print(f"ERROR: Speaker WAV file not found: {voice}")
+                    else:
+                        print(f"Using voice cloning with audio file: {voice}")
+                        print(f"File size: {os.path.getsize(voice) / 1024:.2f} KB")
+                        tts_kwargs['speaker_wav'] = voice
+                        # Add language parameter which is required for multilingual models
+                        language = 'en'  # Default to English, adjust as needed
+                        tts_kwargs['language'] = language
+                        print(f"Using language: {language}")
                 else:
                     tts_kwargs['speaker'] = voice
+                    print(f"Using pre-trained voice: {voice}")
+            else:
+                print("Using default voice")
+                
+            print(f"Final TTS kwargs: {tts_kwargs}")
+            print("===============================\n")
             
             print(f"Generating TTS for segment {segment_index} with text: {segment['text'][:50]}...")
             print(f"Output path: {output_path}")

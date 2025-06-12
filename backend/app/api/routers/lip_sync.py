@@ -13,7 +13,10 @@ import io
 import logging
 import sys
 import json
+import tempfile
 from typing import List, Optional, Dict, Any, Tuple
+from fastapi import UploadFile
+import shlex
 
 # Import models from the new location
 from app.models.tts.models import (
@@ -42,6 +45,51 @@ from pydantic import BaseModel, Field # Added for new Pydantic models
 from app.utils.audio_utils import concatenate_audio_ffmpeg, cleanup_temp_audio  # moved to utils
 
 router = APIRouter()
+
+def extract_audio_from_video(video_path: str, output_path: Optional[str] = None) -> str:
+    """
+    Extract audio from a video file using ffmpeg.
+    
+    Args:
+        video_path: Path to the input video file
+        output_path: Optional output path for the audio file. If not provided, creates a temporary file.
+        
+    Returns:
+        str: Path to the extracted audio file
+    """
+    if not output_path:
+        output_path = Path(tempfile.mktemp(suffix=".wav"))
+    else:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Build ffmpeg command
+    cmd = [
+        "ffmpeg",
+        "-y",  # Overwrite output file if it exists
+        "-i", video_path,
+        "-vn",  # No video
+        "-acodec", "pcm_s16le",  # PCM 16-bit little-endian
+        "-ar", "22050",  # Sample rate
+        "-ac", "1",  # Mono audio
+        "-f", "wav",  # Output format
+        str(output_path)
+    ]
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        print(f"Successfully extracted audio to {output_path}")
+        return str(output_path)
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Failed to extract audio: {e.stderr}"
+        print(error_msg)
+        raise RuntimeError(error_msg)
 
 def resolve_backend_path(path: str) -> str:
     """
@@ -161,6 +209,28 @@ async def generate_lipsync_from_transcript(
                 detail="No valid video segments found in the transcript"
             )
         
+        # Extract audio from the original video for voice cloning
+        try:
+            # Create a temporary directory for the extracted audio
+            temp_audio_dir = TEMP_AUDIO_DIR / (request.job_id or str(uuid.uuid4()))
+            temp_audio_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get the absolute path to the video file
+            video_path = str(BASE_DIR / request.video_path.lstrip('/'))
+            
+            # Extract audio from the video
+            voice_clone_audio = temp_audio_dir / "voice_clone.wav"
+            extract_audio_from_video(video_path, str(voice_clone_audio))
+            
+            # Register cleanup for the temporary audio file
+            background_tasks.add_task(lambda: shutil.rmtree(temp_audio_dir, ignore_errors=True))
+            
+            voice_param = str(voice_clone_audio)
+            print(f"Using extracted audio for voice cloning: {voice_param}")
+        except Exception as e:
+            print(f"Warning: Could not extract audio from video for voice cloning: {str(e)}")
+            voice_param = "default"
+        
         # Create a TTS request from the transcript data
         tts_request = TTSRequest(
             title=request.transcript.title,
@@ -178,8 +248,8 @@ async def generate_lipsync_from_transcript(
                 } for s in request.transcript.videos[0].segments]
             }],
             job_id=request.job_id,
-            voice="default",  # Using default voice
-            language="en"     # Default to English
+            voice=voice_param,  # Use extracted audio for voice cloning or fallback to default
+            language="en"       # Default to English
         )
         
         # Generate TTS audio
