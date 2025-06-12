@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from typing import List, Optional, Dict, Any
 import os
 import shutil
@@ -85,11 +85,9 @@ BASE_DIR = _CURRENT_FILE_DIR.parent.parent.parent  # Should resolve to backend/
 
 # Directory configuration
 TEMP_AUDIO_DIR = BASE_DIR / "temp" / "audio"
-OUTPUT_AUDIO_DIR = BASE_DIR / "output_audio"
 
 # Ensure directories exist
 TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Initialize Coqui TTS ---
 try:
@@ -147,7 +145,8 @@ class LipSyncFromTranscriptResponse(BaseModel):
 
 @router.post("/generate-lipsync-from-transcript", response_model=LipSyncFromTranscriptResponse, tags=["lipsync"])
 async def generate_lipsync_from_transcript(
-    request: LipSyncFromTranscriptRequest = Body(...),
+    background_tasks: BackgroundTasks,
+    request: LipSyncFromTranscriptRequest,
     test_mode: bool = Query(False, description="Enable test mode to bypass heavy processing")
 ):
     """
@@ -215,7 +214,7 @@ async def generate_lipsync_from_transcript(
         )
         
         # Generate TTS audio
-        tts_response = await generate_tts_audio_endpoint(tts_request)
+        tts_response = await generate_tts_audio_endpoint(background_tasks, tts_request)
         
         # Create a lip-sync request - ensure video_path is a string
         # Remove leading slash if present to prevent joining issues
@@ -229,7 +228,7 @@ async def generate_lipsync_from_transcript(
         )
         
         # Generate lip-synced video
-        return await generate_lipsync_endpoint(lipsync_request, test_mode=test_mode)
+        return await generate_lipsync_endpoint(background_tasks, lipsync_request, test_mode=test_mode)
         
     except HTTPException as he:
         raise
@@ -372,8 +371,19 @@ class LipSyncRequest(BaseModel):
 
 LipSyncResponse = LipSyncFromTranscriptResponse
 
-# @router.post("/generate-tts-audio", response_model=TTSResponse, tags=["tts-poc"])
-async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
+async def cleanup_temp_audio(audio_path: str):
+    """Helper function to clean up temporary audio files."""
+    try:
+        if audio_path and os.path.exists(audio_path):
+            os.unlink(audio_path)
+            print(f"Cleaned up temporary audio file: {audio_path}")
+    except Exception as e:
+        print(f"Error cleaning up audio file {audio_path}: {e}")
+
+async def generate_tts_audio_endpoint(
+    background_tasks: BackgroundTasks,
+    request: TTSRequest,
+):
     """
     Generates audio from text segments using Coqui TTS and concatenates them.
     This endpoint supports multiple languages and voices.
@@ -528,7 +538,7 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
         raise HTTPException(status_code=400, detail=detail_msg)
 
     concatenated_audio_filename = f"{request.job_id}_concatenated_tts.wav"
-    concatenated_output_path = OUTPUT_AUDIO_DIR / concatenated_audio_filename
+    concatenated_output_path = TEMP_AUDIO_DIR / concatenated_audio_filename
 
     print(f"Job {request.job_id}: Concatenating {len(segment_audio_paths)} audio segments to {concatenated_output_path}...")
     if not concatenate_audio_ffmpeg(segment_audio_paths, str(concatenated_output_path)):
@@ -546,6 +556,20 @@ async def generate_tts_audio_endpoint(request: TTSRequest = Body(...)):
     if not all_segments_processed_successfully:
         final_message += " However, some transcript segments may have failed during TTS generation (check logs)."
 
+    # Schedule cleanup of the concatenated audio file after the response is sent
+    background_tasks.add_task(
+        cleanup_temp_audio,
+        str(concatenated_output_path)
+    )
+    
+    # Also clean up any temporary segment files if they still exist
+    if job_temp_segments_dir.exists():
+        try:
+            shutil.rmtree(job_temp_segments_dir, ignore_errors=True)
+            print(f"Cleaned up temporary segment directory: {job_temp_segments_dir}")
+        except Exception as e:
+            print(f"Error cleaning up segment directory {job_temp_segments_dir}: {e}")
+    
     return TTSResponse(
         job_id=request.job_id,
         concatenated_audio_path=str(concatenated_output_path),
@@ -656,7 +680,7 @@ async def generate_lipsync_video(
         print(f"Error in generate_lipsync_video: {str(e)}")
         raise
 
-async def generate_lipsync_endpoint(request: LipSyncRequest, test_mode: bool = False):
+async def generate_lipsync_endpoint(background_tasks: BackgroundTasks, request: LipSyncRequest, test_mode: bool = False):
     """
     Generate a lip-synced video from a source video and audio file.
     
@@ -683,6 +707,13 @@ async def generate_lipsync_endpoint(request: LipSyncRequest, test_mode: bool = F
             test_mode=test_mode,
             **wav2lip_params
         )
+        
+        # Schedule cleanup of temporary audio file if it exists
+        if request.audio_path and os.path.exists(request.audio_path):
+            background_tasks.add_task(
+                cleanup_temp_audio,
+                request.audio_path
+            )
         
         # Return just the filename for the video
         filename = os.path.basename(output_path)
